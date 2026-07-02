@@ -164,17 +164,6 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const skillMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/run$/);
-  if (req.method === "POST" && skillMatch) {
-    if (!["boss", "assistant"].includes(user.role)) {
-      throw httpError(403, "技能接口为后台配置入口，普通用户请从业务表单提交。");
-    }
-    const body = await readJson(req);
-    const result = await runSkill(user, decodeURIComponent(skillMatch[1]), body);
-    sendJson(res, 201, result);
-    return;
-  }
-
   throw httpError(404, "接口不存在");
 }
 
@@ -407,33 +396,6 @@ function advanceContract(user, contractId) {
     : "审批阶段已更新。";
 
   return { contract, task: relatedTask };
-}
-
-async function runSkill(user, skillId, body) {
-  if (skillId === "contract-approval-assistant") {
-    return await createContractApproval(user, {
-      title: "合同审批助理提交的客户合同",
-      fileName: "skill_contract_demo.txt",
-      project: "销售合同",
-      amount: "AI 待识别",
-      contractText: body.contractText || body.input || ""
-    });
-  }
-
-  const map = {
-    "expense-assistant": ["报销助理已生成报销草稿，待本人确认", "expense", "finance", "财务", "财务系统"],
-    "travel-field-assistant": ["差旅外勤助理已生成外勤/出差申请，待主管审批", "travel", "wecom", "主管", "企微审批"],
-    "weekly-report-assistant": ["日报周报助理已生成周报草稿，待主管确认", "todo", "ai_workbench", "主管", "AI 工作台"],
-    "meeting-schedule-assistant": ["日程和会议助理已生成会议预订草稿", "meeting", "wecom", "主管", "企微日程"],
-    "product-training-coach": ["产品培训教练已写入学习记录", "todo", "ai_workbench", "主管", "培训知识库"],
-    "system-training-coach": ["系统培训教练已写入培训完成记录", "todo", "ai_workbench", "主管", "培训知识库"],
-    "quote-assistant": ["报价助理已生成报价草案，待销售主管确认", "todo", "ai_workbench", "主管", "报价系统"]
-  };
-  const item = map[skillId] || ["Skill 已运行，待人工确认", "todo", "ai_workbench", "主管", "AI 工作台"];
-  const newTask = task(nextId("T"), item[0], item[1], item[2], item[3], "pending", "2026-07-08", item[4], user.name);
-  newTask.result = "后端已接收 Skill 输入，正式版接入 Dify/扣子/业务系统后写回原系统。";
-  tasks.unshift(newTask);
-  return { task: newTask, input: body.input || "" };
 }
 
 function titleForContractStage(initiator, stage) {

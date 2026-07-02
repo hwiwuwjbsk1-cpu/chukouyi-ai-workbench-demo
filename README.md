@@ -48,7 +48,6 @@ http://localhost:3000
 - `GET /api/tasks`
 - `POST /api/approvals/contracts`
 - `POST /api/approvals/contracts/:id/advance`
-- `POST /api/skills/:skillId/run`
 
 ## 合同模型分析
 
