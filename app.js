@@ -135,7 +135,7 @@ const orgDepartments = [
     name: "战略委员会",
     lead: "肖友泉",
     members: ["老板"],
-    docs: ["战略方向", "经营会议纪要", "重大事项清单"],
+    docs: ["战略方向", "经营事项记录", "重大事项清单"],
     dataScope: "战略与经营汇总",
     workflow: "战略督办、重大事项决策",
     note: "战略委员会属于高敏组织节点，仅展示公开层级，具体资料按授权查看。"
@@ -539,6 +539,10 @@ function uiIcon(name) {
     alert: `<path d="M12 4 21 20H3L12 4Z"></path><path d="M12 9.5v4"></path><path d="M12 17h.01"></path>`,
     file: `<path d="M7 3h7l4 4v14H7V3Z"></path><path d="M14 3v5h5"></path>`,
     search: `<circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 5 5"></path>`,
+    bell: `<path d="M18 8.5a6 6 0 0 0-12 0c0 7-3 7-3 8.8h18c0-1.8-3-1.8-3-8.8Z"></path><path d="M9.8 20a2.4 2.4 0 0 0 4.4 0"></path>`,
+    help: `<circle cx="12" cy="12" r="9"></circle><path d="M9.6 9a2.8 2.8 0 0 1 5.3 1.2c0 2-2.9 2.2-2.9 4"></path><path d="M12 17.5h.01"></path>`,
+    "chevron-down": `<path d="m7 10 5 5 5-5"></path>`,
+    "arrow-right": `<path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path>`,
     robot: `<rect x="5" y="7" width="14" height="11" rx="3"></rect><path d="M12 7V4"></path><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><path d="M9.5 16h5"></path>`
   };
   return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.app}</svg>`;
@@ -727,6 +731,7 @@ function renderWorkbench() {
         ${navButton("permission", "权限管理", "QX")}
       </nav>
       <div class="sidebar-footer">
+        <div class="sidebar-visual" aria-hidden="true"></div>
         <div class="sidebar-tip">
           <strong>企业工作台</strong>
           <span>统一办事 · 权限联动</span>
@@ -735,21 +740,24 @@ function renderWorkbench() {
       </div>
     </aside>
     <section class="main-area">
-      <div class="topbar">
-        <div class="identity-card">
-          <div class="avatar">${escapeHTML(user.name.slice(0, 1))}</div>
-          <div>
-            <h3>${escapeHTML(user.name)} · ${escapeHTML(user.roleName)}</h3>
-            <div class="identity-meta">
+      <header class="app-toolbar">
+        <div></div>
+        <div class="toolbar-actions">
+          <button class="round-tool has-badge" aria-label="通知">
+            ${uiIcon("bell")}
+            <span>3</span>
+          </button>
+          <button class="round-tool" aria-label="帮助">${uiIcon("help")}</button>
+          <div class="user-mini">
+            <div class="avatar">${escapeHTML(user.name.slice(0, 1))}</div>
+            <div>
+              <strong>${escapeHTML(user.name)}</strong>
               <span>${escapeHTML(user.department)}</span>
-              <span>${escapeHTML(user.position)}</span>
-              <span>主管：${escapeHTML(user.manager)}</span>
-              <span>数据范围：${escapeHTML(user.scope)}</span>
             </div>
+            ${uiIcon("chevron-down")}
           </div>
         </div>
-        <button class="primary-btn" id="quickTaskBtn">新建事项</button>
-      </div>
+      </header>
       ${renderCurrentView()}
       ${renderModal()}
     </section>
@@ -771,7 +779,6 @@ function renderWorkbench() {
     state.view = "home";
     render();
   });
-  document.getElementById("quickTaskBtn").addEventListener("click", openApprovalModal);
   bindViewEvents();
   bindPointerGlow();
 }
@@ -808,59 +815,91 @@ function renderCurrentView() {
 
 function homeView() {
   const user = state.user;
-  const roleHomeItems = roleSpecificEntries(user).slice(0, 5);
+  const quickItems = homeQuickItems(user);
+  const recentItems = [...commonEntries.slice(0, 3), ...roleSpecificEntries(user).slice(0, 1)];
   return `
-    <div class="home-stage">
-      <section class="home-hero">
-        <div class="hero-copy">
-          <span class="hero-kicker">${escapeHTML(user.roleName)} 工作台</span>
-          <h1>${escapeHTML(user.department)}</h1>
-          <p class="hero-subtitle">把企微常用能力、岗位入口和组织权限集中到一个工作台，审批只是其中一类入口。</p>
-          <div class="hero-meta">
-            <span>${escapeHTML(user.position)}</span>
-            <span>主管：${escapeHTML(user.manager)}</span>
-            <span>${escapeHTML(user.scope)}</span>
-          </div>
-        </div>
-        <div class="hero-panel">
-          <div class="workbench-dock">
-            <div class="dock-head">
-              <span>工作台入口</span>
-              <strong>常用能力</strong>
-            </div>
-            <div class="dock-grid">
-              ${commonEntries.map(dockButton).join("")}
-            </div>
-          </div>
+    <div class="reference-home">
+      <section class="welcome-zone">
+        <h1>您好，欢迎使用 AI 工作台 <span>👋</span></h1>
+        <p>用统一工作台承接企微能力、岗位入口和组织权限，让每一次工作都有记录、有流转、有结果。</p>
+        <label class="home-search">
+          ${uiIcon("search")}
+          <input aria-label="搜索应用" placeholder="搜索应用、功能或事项..." />
+          <kbd>⌘K</kbd>
+        </label>
+      </section>
+
+      <section class="quick-panel">
+        <h2>快速访问</h2>
+        <div class="feature-grid">
+          ${quickItems.map(featureCard).join("")}
         </div>
       </section>
 
-      <section class="workspace-band">
-        <div class="band-head">
-          <div>
-            <span class="section-label">从企微迁移</span>
-            <h2>通用工作入口</h2>
-          </div>
+      <section class="ai-banner">
+        <div>
+          <h2>统一工作台，连接组织与权限</h2>
+          <p>入口像企微一样简单，后台按组织架构、岗位角色和审批链路决定每个人能看什么、办什么。</p>
+          <button class="primary-btn" data-view="org">查看组织架构</button>
         </div>
-        <div class="command-grid">
-          ${commonEntries.map((item) => moduleCard(item, true)).join("")}
+        <div class="banner-device" aria-hidden="true">
+          <span></span>
+          <i></i>
+          <b>AI</b>
         </div>
       </section>
 
-      ${roleHomeItems.length ? `
-        <section class="workspace-band">
-          <div class="band-head">
-            <div>
-              <span class="section-label">按角色展示</span>
-              <h2>${escapeHTML(user.roleName)}岗位入口</h2>
-            </div>
-          </div>
-          <div class="command-grid role-grid">
-            ${roleHomeItems.map((item) => moduleCard(item, false)).join("")}
-          </div>
-        </section>
-      ` : ""}
+      <section class="recent-panel">
+        <div class="reference-section-head">
+          <h2>最近使用</h2>
+          <button class="chip-btn" data-view="tasks">查看全部</button>
+        </div>
+        <div class="recent-grid">
+          ${recentItems.map(recentCard).join("")}
+        </div>
+      </section>
     </div>
+  `;
+}
+
+function homeQuickItems(user) {
+  const roleItem = roleSpecificEntries(user)[0];
+  return [
+    { kind: "entry", id: "approval-center", title: "审批中心", text: "请假、报销、外勤、出差统一入口", icon: "approval", tone: "blue" },
+    { kind: "view", id: "tasks", title: "事项中心", text: "跨系统待办与办理结果沉淀", icon: "todo", tone: "mint" },
+    { kind: "view", id: "org", title: "组织架构", text: "父子层级、人员画像与权限联动", icon: "org", tone: "violet" },
+    { kind: "entry", id: "meeting-room", title: "会议室", text: "会议室预订、占用与行政协同", icon: "meeting", tone: "orange" },
+    { kind: "entry", id: "permission", title: "权限申请", text: "岗位变更后自动建议权限", icon: "key", tone: "blue" },
+    { kind: "entry", id: "contract-approval", title: "合同审批", text: "AI 先读合同并写入风险备注", icon: "contract", tone: "violet" },
+    { kind: "view", id: "recruiting", title: "招聘体系", text: "岗位画像、胜任力模型与流程协同", icon: "recruiting", tone: "mint" },
+    roleItem
+      ? { kind: "entry", id: roleItem.id, title: roleItem.name, text: roleItem.scope, icon: entryIconName(roleItem), tone: "orange" }
+      : { kind: "entry", id: "todo", title: "我的待办", text: "当前用户相关事项", icon: "todo", tone: "blue" }
+  ];
+}
+
+function featureCard(item) {
+  const action = item.kind === "view" ? `data-view="${escapeHTML(item.id)}"` : `data-entry="${escapeHTML(item.id)}"`;
+  return `
+    <button class="feature-card" ${action}>
+      <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
+      <strong>${escapeHTML(item.title)}</strong>
+      <p>${escapeHTML(item.text)}</p>
+      <em>${uiIcon("arrow-right")}</em>
+    </button>
+  `;
+}
+
+function recentCard(item) {
+  const source = systemSources[item.source] || systemSources.ai_workbench;
+  return `
+    <button class="recent-card" data-entry="${escapeHTML(item.id)}">
+      <span class="recent-icon">${uiIcon(entryIconName(item))}</span>
+      <div>
+        <strong>${escapeHTML(item.name)}</strong>
+        <p>${escapeHTML(source.name)} · ${escapeHTML(item.scope)}</p>
+      </div>
+    </button>
   `;
 }
 
@@ -1676,6 +1715,9 @@ function bindViewEvents() {
 function bindPointerGlow() {
   const glowTargets = document.querySelectorAll([
     ".topbar",
+    ".feature-card",
+    ".recent-card",
+    ".ai-banner",
     ".home-hero",
     ".dock-item",
     ".hero-action",
