@@ -496,12 +496,14 @@ const roleEntries = {
     entry("continuous-risk", "持续风控", "法务系统", "legal", "FK", "risk", "履约风险")
   ],
   assistant: [
+    entry("robot-orchestration", "机器人编排", "AI 工作台", "ai_workbench", "RJ", "robot", "后台能力"),
     entry("org-manage", "组织架构维护", "组织权限", "hr", "ZZ", "org_change", "全局组织"),
     entry("permission-handover", "权限交接", "AI 工作台", "ai_workbench", "JQ", "handover", "组织变更"),
     entry("boss-follow", "老板督办", "AI 工作台", "ai_workbench", "DB", "todo", "全局督办"),
     entry("key-projects", "关键项目", "项目系统", "project", "XM", "project", "关键项目")
   ],
   boss: [
+    entry("robot-orchestration", "机器人编排", "AI 工作台", "ai_workbench", "RJ", "robot", "后台能力"),
     entry("org-manage", "组织架构维护", "组织权限", "hr", "ZZ", "org_change", "全局组织"),
     entry("org-health", "组织状态", "人事系统", "hr", "ZZ", "org", "全局汇总"),
     entry("key-projects", "关键项目", "项目系统", "project", "XM", "project", "关键项目"),
@@ -532,8 +534,54 @@ const recruitingFunnel = [
   ["入职", 3]
 ];
 
+const skillCatalog = {
+  "invoice-ocr": skill("发票识别与命名", "读取电子发票/截图，提取金额、日期、商户、税号和项目备注。", "发票文件、备注、项目名称", "规范附件名、费用字段、待补充项", "财务/事项"),
+  "expense-policy-check": skill("报销规则校验", "按费用类型、项目、金额和附件完整性校验报销是否可提交。", "费用明细、员工、部门、项目", "通过/退回原因、审批建议", "审批中心"),
+  "project-cost-classify": skill("项目费用归类", "把交通、差旅、招待、项目费用归到对应项目和费用科目。", "费用单、项目字典、部门", "项目费用归类、预算占用", "财务系统"),
+  "trip-plan": skill("差旅行程整理", "根据日程、外勤地点和客户拜访计划整理差旅申请。", "地点、时间、客户/学校、预算", "差旅申请、外勤记录", "企微审批"),
+  "field-checkin": skill("外勤签到校验", "校验外勤地点、时间和事项是否与申请一致。", "定位、日程、外勤原因", "异常提示、补充说明", "事项中心"),
+  "work-summary": skill("日报周报汇总", "从事项、项目、日程和审批中汇总个人工作量。", "待办、项目动作、日程、审批", "日报、周报、月度量化草稿", "AI 工作台"),
+  "workload-score": skill("工作量化评分", "根据完成量、延期、协作反馈和目标偏离生成量化分。", "任务状态、项目结果、主管反馈", "量化分、异常原因、提醒对象", "人事/事项"),
+  "business-kpi": skill("生意指标查询", "汇总销售、项目、客户、报价、费用等业务指标。", "客户、项目、周期、指标口径", "经营摘要、异常指标", "老板看板"),
+  "meeting-schedule": skill("日程会议协调", "查找可用时间、会议室和参会人，生成会议安排。", "参会人、时间范围、会议室", "会议日程、会议室预订", "企微日程"),
+  "minutes-extract": skill("会议纪要提取", "从会议文字或录音摘要中提取结论、待办和负责人。", "会议内容、参会人", "纪要、行动项、截止时间", "事项中心"),
+  "visitor-intake": skill("访客接待引导", "根据访客身份、目的和预约记录生成接待流程。", "访客信息、拜访对象、时间", "访客记录、接待待办", "行政/访客"),
+  "training-path": skill("培训路径生成", "按岗位和系统权限生成产品/系统培训路径。", "岗位、部门、权限、历史学习", "课程清单、训练任务", "培训中心"),
+  "quiz-coach": skill("测验与反馈", "生成培训测验并根据答题结果给出纠偏建议。", "培训材料、答题记录", "测验结果、薄弱点", "培训中心"),
+  "ai-usage-coach": skill("AI 使用指导", "把员工的问题转成清晰提示词，并建议可调用的系统入口。", "自然语言问题、角色权限", "提示词、入口建议、注意事项", "AI 工作台"),
+  "quote-context": skill("报价上下文收集", "收集客户、产品、线路、成本、利润和报价约束。", "客户需求、产品、成本、历史报价", "报价草稿、缺失信息", "报价系统"),
+  "quote-risk": skill("报价风险校验", "校验报价有效期、利润率、赔付上限和审批要求。", "报价草稿、成本、合同约束", "风险提示、审批建议", "报价/项目"),
+  "contract-intake": skill("合同材料读取", "读取合同、邮件摘要和附件，提取条款、对方反馈和待确认事项。", "合同文件、邮件摘要、附件", "条款摘要、材料清单", "合同项目组"),
+  "contract-risk": skill("合同风险分析", "按高/中/低风险输出审批备注和部门待确认事项。", "合同正文、历史模板、项目背景", "风险备注、部门反馈清单", "合同项目组"),
+  "contract-group": skill("合同项目组创建", "按合同风险自动拉齐业务、产品、财务、法务角色。", "风险备注、项目、发起人", "项目组、成员职责、待办", "项目系统"),
+  "approval-routing": skill("审批链路路由", "根据角色、金额、风险等级和前置反馈生成审批链。", "项目组反馈、风险等级、权限规则", "正式审批任务", "审批中心"),
+  "lifecycle-monitor": skill("履约风险监控", "审批后把账期、担保、KPI、赔付、交付节点转为监控事项。", "合同档案、项目计划、风险项", "履约提醒、风险事项", "项目/法务")
+};
+
+const robotCatalog = [
+  robot("expense-assistant", "报销助理", "报销/发票", ["invoice-ocr", "expense-policy-check", "project-cost-classify"], ["reimburse", "expense-review", "invoice"], "识别发票、校验规则、归类项目费用，并写入审批中心。", ["employee", "manager", "finance", "boss"]),
+  robot("travel-field-assistant", "差旅外勤助理", "出差/外勤", ["trip-plan", "field-checkin", "expense-policy-check"], ["travel", "field", "schedule"], "把出差、外勤、日程和后续报销串成一条闭环。", ["employee", "manager", "finance", "hr"]),
+  robot("report-assistant", "日报周报助理", "工作量化", ["work-summary", "workload-score", "minutes-extract"], ["todo", "work-deviation", "project-progress"], "自动汇总日报、周报、月度工作量化，低于阈值提醒主管。", ["employee", "manager", "boss"]),
+  robot("business-analysis-assistant", "生意分析助理", "经营分析", ["business-kpi", "project-cost-classify", "quote-risk"], ["key-projects", "performance-result", "risk-overview"], "把项目、费用、报价和风险汇总成老板看得懂的经营摘要。", ["boss", "assistant", "manager", "finance"]),
+  robot("schedule-meeting-assistant", "日程和会议助理", "日程/会议室", ["meeting-schedule", "minutes-extract", "visitor-intake"], ["meeting-room", "schedule"], "协调参会人、会议室、纪要和会后事项。", ["employee", "manager", "assistant", "hr"]),
+  robot("visitor-coach", "访客教练", "访客接待", ["visitor-intake", "meeting-schedule", "ai-usage-coach"], ["meeting-room", "admin-apply"], "接收访客信息，生成接待流程、日程和行政协同事项。", ["employee", "assistant", "hr"]),
+  robot("product-training-coach", "产品培训教练", "产品培训", ["training-path", "quiz-coach", "work-summary"], ["my-projects", "project-progress"], "按岗位生成产品学习路径，并通过测验和项目表现反馈学习结果。", ["employee", "manager", "hr"]),
+  robot("system-training-coach", "系统培训教练", "系统培训", ["training-path", "quiz-coach", "ai-usage-coach"], ["permission", "employee-file"], "根据岗位权限生成系统使用训练和权限注意事项。", ["employee", "manager", "hr", "assistant"]),
+  robot("ai-coach", "AI教练", "AI 使用", ["ai-usage-coach", "work-summary", "business-kpi"], ["todo", "approval-center"], "把自然语言问题转成可执行提示词和系统入口建议。", ["employee", "manager", "hr", "finance", "legal", "assistant", "boss"]),
+  robot("quote-assistant", "报价助理", "报价/销售", ["quote-context", "quote-risk", "approval-routing"], ["my-projects", "key-projects"], "收集报价上下文，校验利润、有效期、赔付边界并生成审批建议。", ["employee", "manager", "boss"]),
+  robot("contract-approval-assistant", "合同审批助理", "合同协作", ["contract-intake", "contract-risk", "contract-group", "approval-routing", "lifecycle-monitor"], ["contract-approval", "legal-risk", "contract-archive", "risk-overview"], "把邮件/附件里的合同沟通沉淀成项目组，再发起正式审批并进入履约监控。", ["employee", "manager", "legal", "finance", "assistant", "boss"])
+];
+
 function entry(id, name, sourceName, source, icon, taskType, scope) {
   return { id, name, sourceName, source, icon, taskType, scope };
+}
+
+function skill(name, purpose, input, output, writesTo) {
+  return { name, purpose, input, output, writesTo };
+}
+
+function robot(id, name, domain, skills, entries, outcome, roles) {
+  return { id, name, domain, skills, entries, outcome, roles };
 }
 
 function profile(name, department, departmentCode, position, manager, tags, currentWork, summary, handover, score, monthly, risk) {
@@ -657,13 +705,15 @@ function navIconName(view) {
     tasks: "tasks",
     org: "org",
     recruiting: "recruiting",
-    permission: "permission"
+    permission: "permission",
+    robots: "robot"
   }[view] || "app";
 }
 
 function entryIconName(item) {
   const byId = {
     "approval-center": "approval",
+    "robot-orchestration": "robot",
     reimburse: "receipt",
     leave: "leave",
     "contract-approval": "contract",
@@ -720,7 +770,8 @@ function entryIconName(item) {
     probation: "clock",
     hr_file: "file",
     performance: "chart",
-    risk_overview: "alert"
+    risk_overview: "alert",
+    robot: "robot"
   };
   return byId[item.id] || byType[item.taskType] || "app";
 }
@@ -788,6 +839,7 @@ function canViewPage(user, view) {
   if (["home", "tasks", "org"].includes(view)) return true;
   if (view === "recruiting") return ["boss", "hr", "manager"].includes(user.role);
   if (view === "permission") return ["boss", "assistant"].includes(user.role);
+  if (view === "robots") return ["boss", "assistant"].includes(user.role);
   return false;
 }
 
@@ -823,6 +875,7 @@ function canInitiateTaskType(user, taskType) {
     work_deviation: ["manager", "boss"],
     performance: ["boss"],
     risk_overview: ["boss"],
+    robot: ["boss", "assistant"],
     legal: ["legal"],
     risk: ["legal", "boss", "assistant"]
   };
@@ -875,6 +928,7 @@ function routedViewForEntry(item) {
     "key-projects": "tasks",
     "performance-result": "tasks",
     "risk-overview": "tasks",
+    "robot-orchestration": "robots",
     "recruiting-system": "recruiting",
     "recruiting-flow": "recruiting",
     "team-todo": "tasks",
@@ -1099,7 +1153,8 @@ function navItemsForUser(user) {
     { view: "tasks", label: "事项中心" },
     { view: "org", label: "组织架构" },
     { view: "recruiting", label: "招聘体系" },
-    { view: "permission", label: "权限管理" }
+    { view: "permission", label: "权限管理" },
+    { view: "robots", label: "机器人" }
   ].filter((item) => canViewPage(user, item.view));
 }
 
@@ -1131,6 +1186,7 @@ function renderCurrentView() {
   if (state.view === "org") return orgView();
   if (state.view === "recruiting") return recruitingView();
   if (state.view === "permission") return permissionView();
+  if (state.view === "robots") return robotsView();
   return homeView();
 }
 
@@ -1241,6 +1297,7 @@ function homeQuickItems(user) {
       base.org
     ],
     assistant: [
+      quickFromEntry("robot-orchestration", "blue"),
       quickFromEntry("org-manage", "blue"),
       quickFromEntry("permission-handover", "violet"),
       quickFromEntry("boss-follow", "orange"),
@@ -1250,6 +1307,7 @@ function homeQuickItems(user) {
       base.meeting
     ],
     boss: [
+      quickFromEntry("robot-orchestration", "blue"),
       quickFromEntry("org-health", "blue"),
       quickFromEntry("key-projects", "mint"),
       quickFromEntry("performance-result", "violet"),
@@ -1284,8 +1342,8 @@ function recentItemsForUser(user) {
     hr: ["onboard", "probation", "transfer", "recruiting-flow"],
     finance: ["expense-review", "invoice", "payment", "cost-class"],
     legal: ["legal-risk", "contract-archive", "contract-template", "continuous-risk"],
-    assistant: ["org-manage", "permission-handover", "boss-follow", "key-projects"],
-    boss: ["org-health", "key-projects", "performance-result", "risk-overview"]
+    assistant: ["robot-orchestration", "org-manage", "permission-handover", "boss-follow"],
+    boss: ["robot-orchestration", "org-health", "key-projects", "risk-overview"]
   };
   return (idsByRole[user.role] || ["approval-center", "todo", "meeting-room"])
     .map(findEntryById)
@@ -2061,6 +2119,84 @@ function permissionView() {
             </div>
           </div>
         `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function robotsView() {
+  if (!canViewPage(state.user, "robots")) {
+    return restrictedView("当前角色无权访问机器人编排。");
+  }
+  const visibleRobots = robotCatalog;
+  const allSkillIds = Array.from(new Set(visibleRobots.flatMap((item) => item.skills)));
+  return `
+    <div class="left-column">
+      <section class="panel">
+        ${panelHead("机器人编排", "机器人是业务对象，技能是后台能力；普通员工只看到业务入口，老板/总助看编排和治理。")}
+        <div class="metrics-row">
+          ${metric("机器人", String(visibleRobots.length), "按角色可见")}
+          ${metric("技能", String(allSkillIds.length), "可复用能力")}
+          ${metric("入口", String(new Set(visibleRobots.flatMap((item) => item.entries)).size), "关联业务场景")}
+          ${metric("治理", "按角色", "可见/调用/写入分离")}
+        </div>
+      </section>
+      <section class="panel">
+        ${panelHead("机器人清单", "每个机器人由多个技能组成，技能负责输入、处理、输出和写回。")}
+        <div class="task-list">
+          ${visibleRobots.map(renderRobotRow).join("")}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderRobotRow(robotItem) {
+  const entries = robotItem.entries
+    .map(findEntryById)
+    .filter(Boolean)
+    .map((item) => item.name)
+    .join("、");
+  return `
+    <div class="task-row">
+      <div class="task-main">
+        <div>
+          <div class="task-title">${escapeHTML(robotItem.name)}</div>
+          <div class="task-meta">
+            <span>${escapeHTML(robotItem.domain)}</span>
+            <span>触发入口：${escapeHTML(entries || "后台触发")}</span>
+            <span>服务角色：${escapeHTML(robotItem.roles.join(" / "))}</span>
+          </div>
+        </div>
+        <span class="tag">数字员工</span>
+      </div>
+      <div class="permission-stack">
+        ${permissionFact("业务结果", robotItem.outcome)}
+        ${permissionFact("技能链", robotItem.skills.map((id) => skillCatalog[id]?.name || id).join(" -> "))}
+      </div>
+      <div class="analysis-grid project-grid">
+        ${robotItem.skills.map(renderSkillCard).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderSkillCard(skillId) {
+  const item = skillCatalog[skillId] || skill(skillId, "待定义", "待定义", "待定义", "待定义");
+  return `
+    <section class="analysis-column">
+      <div class="analysis-column-title">${escapeHTML(item.name)} <em>Skill</em></div>
+      <div class="analysis-risk">
+        <strong>输入</strong>
+        <p>${escapeHTML(item.input)}</p>
+      </div>
+      <div class="analysis-risk">
+        <strong>输出</strong>
+        <p>${escapeHTML(item.output)}</p>
+      </div>
+      <div class="analysis-risk">
+        <strong>写回</strong>
+        <p>${escapeHTML(item.writesTo)}</p>
       </div>
     </section>
   `;
