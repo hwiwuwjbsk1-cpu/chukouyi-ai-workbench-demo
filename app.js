@@ -60,6 +60,15 @@ const contractApprovalStages = [
   { key: "archived", label: "归档/抄送", owner: "系统" }
 ];
 
+const contractProjectStages = [
+  { key: "material", label: "提交材料" },
+  { key: "ai_read", label: "AI 读取合同/附件" },
+  { key: "group", label: "自动创建项目组" },
+  { key: "feedback", label: "部门反馈沉淀" },
+  { key: "approval", label: "自动发起审批" },
+  { key: "lifecycle", label: "归档与履约监控" }
+];
+
 const managerAccount = {
   password: "123456",
   name: "主管",
@@ -148,8 +157,8 @@ const orgDepartments = [
     code: "bfe",
     parentCode: null,
     name: "贝法易集团 / 出口易",
-    lead: "肖友泉",
-    members: ["肖友泉"],
+    lead: "老板",
+    members: ["老板"],
     docs: ["企业文化", "组织通讯录", "制度公告"],
     dataScope: "公司公开组织信息",
     workflow: "组织查看、通讯录、制度公告",
@@ -159,7 +168,7 @@ const orgDepartments = [
     code: "strategy_committee",
     parentCode: "bfe",
     name: "战略委员会",
-    lead: "肖友泉",
+    lead: "老板",
     members: ["老板"],
     docs: ["战略方向", "经营事项记录", "重大事项清单"],
     dataScope: "战略与经营汇总",
@@ -437,7 +446,7 @@ const employeeProfiles = {
 const approvalEntries = [
   entry("reimburse", "报销", "财务/企微", "wecom", "BX", "expense", "本人申请；财务看全部"),
   entry("leave", "请假", "企微审批", "wecom", "QJ", "leave", "本人申请；主管看团队"),
-  entry("contract-approval", "合同审批", "企微审批", "legal", "HT", "contract", "上传合同并提交审批"),
+  entry("contract-approval", "合同协作项目", "项目/法务", "project", "HT", "contract_project", "创建项目组并沉淀反馈"),
   entry("field", "外勤", "企微审批", "wecom", "WQ", "field", "本人申请；主管/HR 查看"),
   entry("travel", "出差", "企微审批", "wecom", "CC", "travel", "本人申请；财务看费用"),
   entry("punch-fix", "补卡", "企微审批", "wecom", "BK", "attendance", "本人申请；主管/HR 查看"),
@@ -508,7 +517,7 @@ let tasks = [
   task("T-1006", "员工月度工作量化低于阈值，请确认是否偏离计划", "work_deviation", "hr", "主管", "pending", "2026-07-06", "AI 工作台"),
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统"),
-  contractTask("T-1004", "客户合同已完成 AI 预审，待带教/主管审核", "主管", "pending", "2026-07-04", "mentor_review", "员工", "AI 已写入低/中/高风险备注，暂不进入老板待办。"),
+  contractProjectTask("T-1004", "客户合同协作项目已创建，待产品/财务/法务反馈", "合同项目组", "processing", "2026-07-04", "collaboration", "员工", "AI 已写入风险备注，正式审批将在反馈确认后自动发起。", sampleContractProject()),
   task("T-1008", "合同归档风险意见复核", "legal", "legal", "法务接口人", "pending", "2026-07-05", "法务系统"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具")
 ];
@@ -541,6 +550,55 @@ function contractTask(id, title, owner, status, due, approvalStage, initiator, r
     initiator,
     approvalStage,
     result
+  };
+}
+
+function contractProjectTask(id, title, owner, status, due, projectStage, initiator, result, project) {
+  return {
+    ...task(id, title, "contract_project", "project", owner, status, due, "合同协作项目"),
+    initiator,
+    projectStage,
+    contractProjectId: project.id,
+    contractProject: project,
+    analysis: project.analysis,
+    result
+  };
+}
+
+function sampleContractProject() {
+  return {
+    id: "CP-1004",
+    title: "客户合同协作项目",
+    fileName: "合同文件.pdf",
+    projectName: "客户合作项目",
+    amount: "待识别",
+    initiator: "员工",
+    projectStage: "collaboration",
+    currentNode: "部门反馈汇总",
+    groupMembers: [
+      { role: "业务发起人", owner: "员工", responsibility: "提交合同、对方反馈和商务背景" },
+      { role: "产品", owner: "产品负责人", responsibility: "确认 KPI、报价边界、赔付口径" },
+      { role: "财务", owner: "财务", responsibility: "确认账期、结算和担保材料" },
+      { role: "法务", owner: "法务接口人", responsibility: "确认条款、免责和签署主体" },
+      { role: "AI", owner: "合同风险分析", responsibility: "输出高/中/低风险备注" }
+    ],
+    feedbacks: [
+      { role: "产品", status: "待确认", focus: "服务范围、KPI、报价有效期、赔偿边界" },
+      { role: "财务", status: "待确认", focus: "账期、结算币种、担保材料、回款风险" },
+      { role: "法务", status: "待确认", focus: "免责条款、保密、争议解决、签署主体" },
+      { role: "业务", status: "跟进中", focus: "客户反馈、补充材料、最终版本确认" }
+    ],
+    actions: ["补齐合同/补充材料版本", "沉淀产品、财务、法务反馈", "确认对方反馈是否接受", "反馈确认后自动发起正式审批"],
+    lifecycle: ["合同档案归档", "交付节点同步项目管理", "账期/担保/赔付进入履约监控", "风险事项持续提醒责任人"],
+    audit: ["员工创建合同协作项目", "AI 完成合同文本读取并生成风险备注", "系统创建项目组并分派部门反馈事项"],
+    analysis: {
+      provider: "美团模型",
+      model: "LongCat-2.0",
+      approvalRemark: "AI 已完成条款读取，建议先完成产品、财务、法务反馈，再自动发起正式审批。",
+      highRisks: [{ title: "账期与担保", reason: "付款周期和担保材料需财务/法务共同确认。", suggestion: "补充担保材料审核结论。" }],
+      mediumRisks: [{ title: "KPI 与赔付", reason: "服务时效和赔偿边界需要产品确认。", suggestion: "在报价或附件中固化适用范围。" }],
+      lowRisks: [{ title: "版本管理", reason: "合同和补充材料需要统一归档。", suggestion: "审批完成后进入合同档案。" }]
+    }
   };
 }
 
@@ -646,6 +704,7 @@ function entryIconName(item) {
   };
   const byType = {
     expense: "receipt",
+    contract_project: "contract",
     contract: "contract",
     legal: "contract",
     risk: "alert",
@@ -672,6 +731,7 @@ function visibleTasks(user) {
 }
 
 function canSeeTask(user, item) {
+  if (item.type === "contract_project") return canSeeContractProjectTask(user, item);
   if (isContractApprovalTask(item)) return canSeeContractTask(user, item);
   if (user.role === "boss") return true;
   if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
@@ -684,6 +744,11 @@ function canSeeTask(user, item) {
 
 function isContractApprovalTask(item) {
   return item.type === "contract" || Boolean(item.approvalStage);
+}
+
+function canSeeContractProjectTask(user, item) {
+  if (item.initiator === user.name || item.initiator === user.username) return true;
+  return ["manager", "finance", "legal", "assistant", "boss"].includes(user.role);
 }
 
 function canSeeContractTask(user, item) {
@@ -700,6 +765,10 @@ function canSeeContractTask(user, item) {
 
 function isContractApprovalEntry(item) {
   return item?.id === "contract-approval" || item?.taskType === "contract";
+}
+
+function isContractProjectEntry(item) {
+  return item?.id === "contract-approval" || item?.taskType === "contract_project";
 }
 
 function isApprovalEntry(item) {
@@ -736,6 +805,7 @@ function canInitiateTaskType(user, taskType) {
     todo: "all",
     permission: ["employee", "manager", "hr", "finance", "legal"],
     contract: ["employee", "manager"],
+    contract_project: ["employee", "manager"],
     payment: ["finance"],
     expense_review: ["finance"],
     invoice: ["finance"],
@@ -776,14 +846,15 @@ function canAccessEntry(user, item) {
 
 function canInitiateEntry(user, item) {
   if (!user || !item) return false;
+  if (isContractProjectEntry(item)) return canInitiateTaskType(user, "contract_project");
   if (isContractApprovalEntry(item)) return canInitiateTaskType(user, "contract");
   if (routedViewForEntry(item)) return false;
   return canInitiateTaskType(user, item.taskType);
 }
 
 function entryRestrictionMessage(item) {
-  if (isContractApprovalEntry(item)) {
-    return "当前账号只处理合同待办或风险意见，不能发起或上传合同。";
+  if (isContractProjectEntry(item) || isContractApprovalEntry(item)) {
+    return "当前账号只能查看合同协作信息或处理合同待办，不能创建合同项目。";
   }
   if (item?.taskType === "payment") {
     return "付款申请仅财务账号可发起，其他角色只能在事项中查看自己有权限的数据。";
@@ -1125,6 +1196,7 @@ function homeQuickItems(user) {
     employee: [
       base.tasks,
       base.approvals,
+      quickFromEntry("contract-approval", "violet"),
       base.permission,
       base.schedule,
       base.org,
@@ -1137,6 +1209,7 @@ function homeQuickItems(user) {
       quickFromEntry("work-deviation", "violet"),
       quickFromEntry("project-progress", "mint"),
       quickFromEntry("handover", "blue"),
+      quickFromEntry("contract-approval", "violet"),
       base.approvals,
       base.org
     ],
@@ -1206,8 +1279,8 @@ function quickFromEntry(id, tone = "blue") {
 
 function recentItemsForUser(user) {
   const idsByRole = {
-    employee: ["approval-center", "permission", "schedule", "my-projects"],
-    manager: ["team-todo", "work-deviation", "project-progress", "approval-center"],
+    employee: ["approval-center", "contract-approval", "permission", "my-projects"],
+    manager: ["team-todo", "contract-approval", "work-deviation", "project-progress"],
     hr: ["onboard", "probation", "transfer", "recruiting-flow"],
     finance: ["expense-review", "invoice", "payment", "cost-class"],
     legal: ["legal-risk", "contract-archive", "contract-template", "continuous-risk"],
@@ -1388,6 +1461,7 @@ function renderApprovalModal() {
 
 function renderEntryModal(item) {
   if (!item) return "";
+  if (item.taskType === "contract_project") return renderContractProjectModal(item);
   if (item.taskType === "contract") return renderContractApprovalModal(item);
   const source = systemSources[item.source] || systemSources.ai_workbench;
   return modalShell(
@@ -1416,18 +1490,17 @@ function renderEntryModal(item) {
   );
 }
 
-function renderContractApprovalModal(item) {
-  const source = systemSources[item.source] || systemSources.ai_workbench;
+function renderContractProjectModal(item) {
   return modalShell(
     item.name,
-    "提交后按公司审批链流转，老板只在前置审核完成后收到终审待办。",
+    "先创建合同项目组，沉淀产品、财务、法务反馈；反馈确认后再自动发起正式审批。",
     `
       <div class="contract-layout">
         <div class="contract-upload">
           <span class="module-icon">${uiIcon("contract")}</span>
           <div>
-            <div class="task-title">上传合同文件</div>
-            <p class="panel-note">支持 PDF、DOCX、TXT；也可以直接粘贴合同正文。</p>
+            <div class="task-title">上传合同/邮件材料</div>
+            <p class="panel-note">支持 PDF、DOCX、TXT；也可以粘贴合同正文或邮件沟通摘要。</p>
           </div>
           <input class="hidden-file" id="contractFile" type="file" accept=".pdf,.docx,.txt,.md" />
           <button class="ghost-btn" type="button" data-contract-file-pick>选择文件</button>
@@ -1435,17 +1508,17 @@ function renderContractApprovalModal(item) {
         <div class="contract-file-name" id="contractFileName">未选择文件</div>
 
         <label class="contract-text-input">
-          <span>合同正文</span>
-          <textarea id="contractText" placeholder="可选：如果没有合同文件，可将合同正文粘贴到这里。"></textarea>
+          <span>合同/沟通摘要</span>
+          <textarea id="contractText" placeholder="可选：粘贴合同条款、邮件沟通摘要或对方反馈，系统会生成项目组风险备注。"></textarea>
         </label>
 
         <div class="contract-process-note">
-          <strong>提交后生成审批备注</strong>
-          <span>风险分析结果会显示在事项中，并随审批流转给当前处理人。</span>
+          <strong>提交后创建项目组</strong>
+          <span>系统会生成 AI 风险备注、部门反馈事项、过程记录，并在反馈确认后发起正式审批。</span>
         </div>
 
         <div class="approval-chain">
-          ${contractApprovalStages.filter((step) => !["submitted", "ai_review", "archived"].includes(step.key)).map((step, index) => `
+          ${contractProjectStages.map((step, index) => `
             <div class="chain-step">
               <span>${String(index + 1).padStart(2, "0")}</span>
               <strong>${escapeHTML(step.label)}</strong>
@@ -1456,14 +1529,19 @@ function renderContractApprovalModal(item) {
     `,
     `
       <button class="ghost-btn" data-modal-close>取消</button>
-      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交合同审批</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">创建合同项目组</button>
     `
   );
+}
+
+function renderContractApprovalModal(item) {
+  return renderContractProjectModal(item);
 }
 
 function entryFields(item) {
   const fields = {
     expense: [["费用类型", "交通/项目/行政费用"], ["关联项目", "校园招聘项目"], ["附件", "发票 OCR 识别后自动命名"], ["审批链", "本人 -> 主管 -> 财务"]],
+    contract_project: [["合同/邮件材料", "上传文件或粘贴沟通摘要"], ["AI 读取", "先读完整材料，再生成风险备注"], ["项目组", "自动拉齐产品、财务、法务反馈事项"], ["后续", "反馈确认 -> 正式审批 -> 合同归档/交付/风控"]],
     contract: [["合同文件", "上传 PDF / Word / 图片扫描件"], ["AI 读取", "先读完整合同，再生成风险备注"], ["风险备注", "低/中/高风险写入审批备注，按阶段可见"], ["审批链", "员工提交 -> AI 预审 -> 带教/主管 -> 法务 -> 总助 -> 老板终审 -> 归档"]],
     leave: [["请假类型", "年假/事假/病假"], ["开始时间", "选择日期时间"], ["结束时间", "选择日期时间"], ["审批链", "本人 -> 直属主管 -> HR 汇总"]],
     field: [["外勤地点", "客户/学校/供应商地址"], ["外勤原因", "拜访、宣讲、交付支持"], ["审批链", "本人 -> 直属主管"]],
@@ -1753,6 +1831,7 @@ function renderTaskRow(item) {
             <span>${escapeHTML(item.sourceName)}</span>
             <span>负责人：${escapeHTML(item.owner)}</span>
             ${item.approvalStage ? `<span>阶段：${escapeHTML(contractStageLabel(item.approvalStage))}</span>` : ""}
+            ${item.projectStage ? `<span>项目阶段：${escapeHTML(contractProjectStageLabel(item.projectStage))}</span>` : ""}
             <span>截止：${escapeHTML(item.due)}</span>
             ${item.result ? `<span>结论：${escapeHTML(item.result)}</span>` : ""}
           </div>
@@ -1764,12 +1843,64 @@ function renderTaskRow(item) {
           <button class="small-btn" data-deviation="${item.id}" data-result="偏离计划">偏离计划</button>
           <button class="small-btn" data-deviation="${item.id}" data-result="未偏离计划">未偏离</button>
           <button class="small-btn" data-deviation="${item.id}" data-result="需调整方向">需调整方向</button>
+        ` : item.type === "contract_project" ? `
+          ${canStartContractProjectApproval(state.user, item) ? `<button class="small-btn" data-start-contract-project="${item.contractProjectId}">发起正式审批</button>` : ""}
+          <button class="small-btn" data-complete="${item.id}">记录反馈完成</button>
+          <button class="small-btn" data-need="${item.id}">需补充材料</button>
         ` : `
           <button class="small-btn" data-complete="${item.id}">标记完成</button>
           <button class="small-btn" data-need="${item.id}">需补充</button>
         `}
       </div>
+      ${item.contractProject ? renderContractProjectPanel(item.contractProject) : ""}
       ${item.analysis ? renderContractAnalysis(item.analysis) : ""}
+    </div>
+  `;
+}
+
+function canStartContractProjectApproval(user, item) {
+  if (!item || item.type !== "contract_project" || item.contractProject?.approvalTaskId) return false;
+  if (item.initiator === user.name || item.initiator === user.username) return true;
+  return ["manager", "legal", "assistant"].includes(user.role);
+}
+
+function renderContractProjectPanel(project) {
+  return `
+    <div class="contract-analysis project-panel">
+      <div class="analysis-head">
+        <strong>合同项目组</strong>
+        <span>${escapeHTML(project.currentNode || "部门反馈汇总")} · ${escapeHTML(project.fileName || "合同材料")}</span>
+      </div>
+      <div class="analysis-grid project-grid">
+        <section class="analysis-column">
+          <div class="analysis-column-title">参与角色 <em>${(project.groupMembers || []).length}</em></div>
+          ${(project.groupMembers || []).map((item) => `
+            <div class="analysis-risk">
+              <strong>${escapeHTML(item.role)} · ${escapeHTML(item.owner)}</strong>
+              <p>${escapeHTML(item.responsibility)}</p>
+            </div>
+          `).join("")}
+        </section>
+        <section class="analysis-column medium">
+          <div class="analysis-column-title">部门反馈 <em>${(project.feedbacks || []).length}</em></div>
+          ${(project.feedbacks || []).map((item) => `
+            <div class="analysis-risk">
+              <strong>${escapeHTML(item.role)} · ${escapeHTML(item.status)}</strong>
+              <p>${escapeHTML(item.focus)}</p>
+            </div>
+          `).join("")}
+        </section>
+        <section class="analysis-column low">
+          <div class="analysis-column-title">审批后管理 <em>${(project.lifecycle || []).length}</em></div>
+          ${(project.lifecycle || []).map((item) => `
+            <div class="analysis-risk">
+              <strong>${escapeHTML(item)}</strong>
+              <p>进入合同档案、交付和履约风险监控。</p>
+            </div>
+          `).join("")}
+        </section>
+      </div>
+      <div class="analysis-summary">过程记录：${(project.audit || []).map(escapeHTML).join(" / ")}</div>
     </div>
   `;
 }
@@ -1822,6 +1953,14 @@ function statusName(status) {
 function contractStageLabel(stage) {
   const matched = contractApprovalStages.find((item) => item.key === stage);
   return matched ? matched.label : stage;
+}
+
+function contractProjectStageLabel(stage) {
+  return {
+    collaboration: "部门反馈汇总",
+    formal_approval: "正式审批中",
+    archived: "合同档案/履约监控"
+  }[stage] || stage;
 }
 
 function permissionRows() {
@@ -2103,6 +2242,10 @@ function bindViewEvents() {
     button.addEventListener("click", () => updateTask(button.dataset.need, "need_info"));
   });
 
+  document.querySelectorAll("[data-start-contract-project]").forEach((button) => {
+    button.addEventListener("click", () => startContractProjectApproval(button.dataset.startContractProject));
+  });
+
   document.querySelectorAll("[data-deviation]").forEach((button) => {
     button.addEventListener("click", () => confirmDeviation(button.dataset.deviation, button.dataset.result));
   });
@@ -2206,25 +2349,32 @@ async function submitEntryWorkflow(item) {
   if (!requireBackend(`提交${item.name}`)) return;
   const source = systemSources[item.source] || systemSources.ai_workbench;
   try {
-    const payload = item.taskType === "contract"
-      ? await submitContractApproval()
-      : await apiRequest("/api/tasks", {
-          method: "POST",
-          body: JSON.stringify({
-            entryId: item.id,
-            title: `${state.user.name} 发起：${item.name}`,
-            type: item.taskType,
-            source: item.source,
-            sourceName: source.name
-          })
-        });
+    let payload;
+    if (item.taskType === "contract_project") {
+      payload = await submitContractProject();
+    } else if (item.taskType === "contract") {
+      payload = await submitContractApproval();
+    } else {
+      payload = await apiRequest("/api/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          entryId: item.id,
+          title: `${state.user.name} 发起：${item.name}`,
+          type: item.taskType,
+          source: item.source,
+          sourceName: source.name
+        })
+      });
+    }
     upsertBackendTask(payload.task, payload.analysis);
     addAudit("提交后端流程", {
       category: "接口",
       object: payload.task ? payload.task.id : item.id,
       before: "前端表单",
-      after: item.taskType === "contract" ? "写入合同审批：ai_review" : "写入事项中心",
-      impact: item.taskType === "contract"
+      after: item.taskType === "contract_project" ? "创建合同协作项目" : (item.taskType === "contract" ? "写入合同审批：ai_review" : "写入事项中心"),
+      impact: item.taskType === "contract_project"
+        ? "自动创建项目组、风险备注、部门反馈和后续正式审批入口"
+        : item.taskType === "contract"
         ? "老板不可见；AI 预审完成后才流转到带教/主管"
         : `来源系统：${source.name}`
     });
@@ -2265,10 +2415,52 @@ async function submitContractApproval() {
   });
 }
 
+async function submitContractProject() {
+  const contractText = document.getElementById("contractText")?.value.trim() || "";
+  const fileInput = document.getElementById("contractFile");
+  const file = fileInput?.files?.[0];
+  if (!contractText && !file) {
+    throw new Error("请先上传合同文件，或粘贴合同/沟通摘要后再提交。");
+  }
+  const formData = new FormData();
+  formData.append("title", "客户合同协作项目");
+  formData.append("project", "客户合作项目");
+  formData.append("amount", "待识别");
+  if (contractText) formData.append("contractText", contractText);
+  if (file) formData.append("contractFile", file, file.name);
+  return apiRequest("/api/contracts/projects", {
+    method: "POST",
+    body: formData
+  });
+}
+
+async function startContractProjectApproval(projectId) {
+  if (!requireBackend("发起合同正式审批")) return;
+  try {
+    const payload = await apiRequest(`/api/contracts/projects/${encodeURIComponent(projectId)}/start-approval`, {
+      method: "POST"
+    });
+    if (payload.projectTask) upsertBackendTask(payload.projectTask);
+    upsertBackendTask(payload.task, payload.task?.analysis);
+    addAudit("合同项目发起正式审批", {
+      category: "接口",
+      object: projectId,
+      before: "合同协作项目",
+      after: "正式审批已创建",
+      impact: "项目组反馈沉淀后进入审批链"
+    });
+    state.view = "tasks";
+    render();
+  } catch (error) {
+    alert(`发起正式审批失败：${error.message}`);
+  }
+}
+
 function ownerFor(taskType) {
   if (["expense", "expense_review", "invoice", "payment", "cost", "project_cost"].includes(taskType)) return "财务";
   if (["org_change", "handover"].includes(taskType)) return "总助";
   if (["onboard", "probation", "transfer", "resign", "hr_file"].includes(taskType)) return "HR";
+  if (["contract_project"].includes(taskType)) return "合同项目组";
   if (["project", "todo", "schedule", "leave", "field", "travel", "attendance", "meeting", "approval"].includes(taskType)) return "主管";
   if (["contract"].includes(taskType)) return "合同审批助理";
   if (["recruiting"].includes(taskType)) return "HR";

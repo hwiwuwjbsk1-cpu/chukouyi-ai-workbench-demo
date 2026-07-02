@@ -37,13 +37,32 @@ const contractStages = [
 ];
 
 let contracts = [];
+let contractProjects = [
+  contractProject(
+    "CP-1004",
+    "客户合同协作项目",
+    "员工",
+    "collaboration",
+    "合同文件.pdf",
+    "客户合作项目",
+    "待识别",
+    {
+      provider: "美团模型",
+      model: "LongCat-2.0",
+      approvalRemark: "AI 已完成条款读取，建议先完成产品、财务、法务反馈，再自动发起正式审批。",
+      highRisks: [{ title: "账期与担保", reason: "付款周期和担保材料需财务/法务共同确认。", suggestion: "补充担保材料审核结论。" }],
+      mediumRisks: [{ title: "KPI 与赔付", reason: "服务时效和赔偿边界需要产品确认。", suggestion: "在报价或附件中固化适用范围。" }],
+      lowRisks: [{ title: "版本管理", reason: "合同和补充材料需要统一归档。", suggestion: "审批完成后进入合同档案。" }]
+    }
+  )
+];
 let tasks = [
   task("T-1001", "校园招聘项目立项与角色分工", "project", "project", "主管", "processing", "2026-07-08", "项目系统", "系统"),
   task("T-1002", "员工试用期转正评估", "probation", "hr", "主管", "pending", "2026-07-05", "人事系统", "系统"),
   task("T-1006", "员工月度工作量化低于阈值，请确认是否偏离计划", "work_deviation", "hr", "主管", "pending", "2026-07-06", "AI 工作台", "系统"),
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限", "系统"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统", "系统"),
-  contractTask("T-1004", "客户合同已完成 AI 预审，待带教/主管审核", "主管", "pending", "2026-07-04", "mentor_review", "员工", "AI 已写入低/中/高风险备注，暂不进入老板待办。"),
+  contractProjectTask("T-1004", "客户合同协作项目已创建，待产品/财务/法务反馈", "合同项目组", "processing", "2026-07-04", "collaboration", "员工", "AI 已写入风险备注，正式审批将在反馈确认后自动发起。", contractProjects[0]),
   task("T-1008", "合同归档风险意见复核", "legal", "legal", "法务接口人", "pending", "2026-07-05", "法务系统", "系统"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具", "系统")
 ];
@@ -124,6 +143,9 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/tasks") {
     const body = await readJson(req);
+    if ((body.type || "") === "contract_project") {
+      throw httpError(400, "请通过合同协作项目入口创建合同项目组。");
+    }
     if (!canInitiateTaskType(user, body.type || "todo")) {
       throw httpError(403, "当前角色无权发起该流程。");
     }
@@ -140,6 +162,23 @@ async function handleApi(req, res, url) {
     );
     tasks.unshift(newTask);
     sendJson(res, 201, { task: newTask });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/contracts/projects") {
+    if (!canInitiateContractProject(user)) {
+      throw httpError(403, "当前角色不能创建合同协作项目。");
+    }
+    const submission = await readContractSubmission(req);
+    const payload = await createContractProject(user, submission);
+    sendJson(res, 201, payload);
+    return;
+  }
+
+  const projectApprovalMatch = url.pathname.match(/^\/api\/contracts\/projects\/([^/]+)\/start-approval$/);
+  if (req.method === "POST" && projectApprovalMatch) {
+    const payload = startContractProjectApproval(user, projectApprovalMatch[1]);
+    sendJson(res, 200, payload);
     return;
   }
 
@@ -191,6 +230,133 @@ function contractTask(id, title, owner, status, due, approvalStage, initiator, r
     ...task(id, title, "contract", "legal", owner, status, due, "合同审批", initiator),
     approvalStage,
     result
+  };
+}
+
+function contractProjectTask(id, title, owner, status, due, projectStage, initiator, result, project) {
+  return {
+    ...task(id, title, "contract_project", "project", owner, status, due, "合同协作项目", initiator),
+    projectStage,
+    contractProjectId: project.id,
+    contractProject: publicContractProject(project),
+    analysis: project.analysis,
+    result
+  };
+}
+
+function contractProject(id, title, initiator, projectStage, fileName, projectName, amount, analysis) {
+  return {
+    id,
+    title,
+    fileName,
+    projectName,
+    amount,
+    initiator,
+    projectStage,
+    currentNode: projectStage === "formal_approval" ? "正式审批中" : "部门反馈汇总",
+    analysis,
+    groupMembers: contractProjectMembers(initiator),
+    feedbacks: contractProjectFeedbacks(),
+    actions: [
+      "补齐合同/补充材料版本",
+      "产品确认 KPI、报价边界和赔付上限",
+      "财务确认账期、结算币种和担保材料",
+      "法务确认免责、争议解决和签署主体",
+      "反馈确认后自动发起正式审批"
+    ],
+    lifecycle: [
+      "合同档案归档",
+      "交付节点同步项目管理",
+      "账期/担保/赔付进入履约监控",
+      "风险事项持续提醒责任人"
+    ],
+    audit: [
+      `${initiator} 创建合同协作项目`,
+      "AI 完成合同文本读取并生成风险备注",
+      "系统创建项目组并分派产品、财务、法务反馈事项"
+    ]
+  };
+}
+
+function contractProjectMembers(initiator) {
+  return [
+    { role: "业务发起人", owner: initiator, responsibility: "提交合同、对方反馈和商务背景" },
+    { role: "产品", owner: "产品负责人", responsibility: "确认 KPI、报价边界、赔付口径" },
+    { role: "财务", owner: "财务", responsibility: "确认账期、结算、担保材料" },
+    { role: "法务", owner: "法务接口人", responsibility: "确认条款、免责、争议解决和签署主体" },
+    { role: "AI", owner: "合同风险分析", responsibility: "读取合同并输出高/中/低风险备注" }
+  ];
+}
+
+function contractProjectFeedbacks() {
+  return [
+    { role: "产品", status: "待确认", focus: "服务范围、KPI、报价有效期、赔偿边界" },
+    { role: "财务", status: "待确认", focus: "账期、结算币种、担保材料、回款风险" },
+    { role: "法务", status: "待确认", focus: "免责条款、保密、争议解决、签署主体" },
+    { role: "业务", status: "跟进中", focus: "客户反馈、补充材料、最终版本确认" }
+  ];
+}
+
+function publicContractProject(project) {
+  return {
+    id: project.id,
+    title: project.title,
+    fileName: project.fileName,
+    projectName: project.projectName,
+    amount: project.amount,
+    initiator: project.initiator,
+    projectStage: project.projectStage,
+    currentNode: project.currentNode,
+    groupMembers: project.groupMembers,
+    feedbacks: project.feedbacks,
+    actions: project.actions,
+    lifecycle: project.lifecycle,
+    audit: project.audit,
+    approvalTaskId: project.approvalTaskId || "",
+    contractId: project.contractId || ""
+  };
+}
+
+async function createContractProject(user, body) {
+  const contractText = (await extractContractText(body)).trim();
+  if (contractText.length < 20) {
+    throw httpError(400, "请上传可解析的合同文本，或在合同文本框粘贴合同内容。");
+  }
+  const modelResult = await analyzeContractWithModel(contractText, {
+    fileName: body.fileName || "合同文件",
+    project: body.project || "客户合作项目",
+    amount: body.amount || "待识别"
+  });
+  const project = contractProject(
+    nextId("CP"),
+    body.title || "客户合同协作项目",
+    user.name,
+    "collaboration",
+    body.fileName || "合同文件.txt",
+    body.project || "客户合作项目",
+    body.amount || "待识别",
+    modelResult
+  );
+  project.extractedTextLength = contractText.length;
+  const newTask = contractProjectTask(
+    nextId("T"),
+    `${user.name} 创建：合同协作项目（待部门反馈）`,
+    "合同项目组",
+    "processing",
+    "2026-07-08",
+    "collaboration",
+    user.name,
+    `${modelResult.provider}已生成风险备注；系统已创建项目组，先沉淀部门反馈，再进入正式审批。`,
+    project
+  );
+  project.taskId = newTask.id;
+  contractProjects.unshift(project);
+  tasks.unshift(newTask);
+  return {
+    project: publicContractProject(project),
+    task: newTask,
+    analysis: modelResult,
+    message: "合同协作项目已创建，正式审批将在反馈确认后发起"
   };
 }
 
@@ -404,6 +570,73 @@ function advanceContract(user, contractId) {
   return { contract, task: relatedTask };
 }
 
+function startContractProjectApproval(user, projectId) {
+  const project = contractProjects.find((item) => item.id === projectId);
+  if (!project) throw httpError(404, "合同协作项目不存在");
+  if (!canStartContractProjectApproval(user, project)) {
+    throw httpError(403, "当前角色不能发起该合同项目的正式审批。");
+  }
+  if (project.approvalTaskId) {
+    const existingTask = tasks.find((item) => item.id === project.approvalTaskId);
+    return { project: publicContractProject(project), task: existingTask, message: "正式审批已存在" };
+  }
+
+  const contract = {
+    id: nextId("C"),
+    title: project.title.replace("协作项目", "正式审批"),
+    fileName: project.fileName,
+    project: project.projectName,
+    amount: project.amount,
+    initiator: project.initiator,
+    approvalStage: "mentor_review",
+    modelProvider: project.analysis.provider,
+    modelName: project.analysis.model,
+    riskNotes: project.analysis.riskNotes,
+    approvalRemark: project.analysis.approvalRemark,
+    audit: [
+      ...project.audit,
+      `${user.name} 确认项目组反馈并发起正式审批`
+    ]
+  };
+  const approvalTask = {
+    ...contractTask(
+      nextId("T"),
+      `${project.initiator} 发起：合同正式审批待带教/主管审核`,
+      "主管",
+      "pending",
+      "2026-07-09",
+      "mentor_review",
+      project.initiator,
+      "项目组反馈已沉淀，正式审批从带教/主管节点开始。"
+    ),
+    contractId: contract.id,
+    analysis: project.analysis
+  };
+  const projectTask = tasks.find((item) => item.contractProjectId === project.id);
+
+  project.projectStage = "formal_approval";
+  project.currentNode = "正式审批中";
+  project.approvalTaskId = approvalTask.id;
+  project.contractId = contract.id;
+  project.audit.push(`${user.name} 发起正式审批`);
+  if (projectTask) {
+    projectTask.projectStage = project.projectStage;
+    projectTask.status = "processing";
+    projectTask.owner = "主管";
+    projectTask.result = "项目组反馈已确认，正式审批已自动生成。";
+    projectTask.contractProject = publicContractProject(project);
+  }
+
+  contracts.unshift(contract);
+  tasks.unshift(approvalTask);
+  return {
+    project: publicContractProject(project),
+    task: approvalTask,
+    projectTask,
+    message: "正式审批已自动创建"
+  };
+}
+
 function titleForContractStage(initiator, stage) {
   return {
     ai_review: `${initiator} 发起：合同审批（AI 预审中）`,
@@ -419,6 +652,7 @@ function ownerFor(type) {
   if (["expense", "expense_review", "invoice", "payment", "cost", "project_cost"].includes(type)) return "财务";
   if (["org_change", "handover"].includes(type)) return "总助";
   if (["onboard", "probation", "transfer", "resign", "hr_file"].includes(type)) return "HR";
+  if (["contract_project"].includes(type)) return "合同项目组";
   if (["contract"].includes(type)) return "合同审批助理";
   if (["recruiting"].includes(type)) return "HR";
   return "主管";
@@ -426,6 +660,7 @@ function ownerFor(type) {
 
 function canSeeTask(user, item) {
   if (!item) return false;
+  if (item.type === "contract_project") return canSeeContractProjectTask(user, item);
   if (item.type === "contract" || item.approvalStage) return canSeeContractTask(user, item);
   if (user.role === "boss") return true;
   if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
@@ -447,8 +682,22 @@ function canSeeContractTask(user, item) {
   return false;
 }
 
+function canSeeContractProjectTask(user, item) {
+  if (item.initiator === user.name || item.initiator === user.username) return true;
+  return ["manager", "finance", "legal", "assistant", "boss"].includes(user.role);
+}
+
 function canInitiateContractApproval(user) {
   return ["employee", "manager"].includes(user.role);
+}
+
+function canInitiateContractProject(user) {
+  return ["employee", "manager"].includes(user.role);
+}
+
+function canStartContractProjectApproval(user, project) {
+  if (user.name === project.initiator || user.username === project.initiator) return true;
+  return ["manager", "legal", "assistant"].includes(user.role);
 }
 
 function canInitiateTaskType(user, type) {
@@ -464,6 +713,7 @@ function canInitiateTaskType(user, type) {
     todo: "all",
     permission: ["employee", "manager", "hr", "finance", "legal"],
     contract: ["employee", "manager"],
+    contract_project: ["employee", "manager"],
     payment: ["finance"],
     expense_review: ["finance"],
     invoice: ["finance"],
