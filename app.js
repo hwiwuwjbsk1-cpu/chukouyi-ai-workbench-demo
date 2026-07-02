@@ -437,7 +437,7 @@ const employeeProfiles = {
 const approvalEntries = [
   entry("reimburse", "报销", "财务/企微", "wecom", "BX", "expense", "本人申请；财务看全部"),
   entry("leave", "请假", "企微审批", "wecom", "QJ", "leave", "本人申请；主管看团队"),
-  entry("contract-approval", "合同审批", "企微审批/AI 风控", "legal", "HT", "contract", "上传合同后 AI 先读全文并写入风险备注"),
+  entry("contract-approval", "合同审批", "企微审批", "legal", "HT", "contract", "上传合同并提交审批"),
   entry("field", "外勤", "企微审批", "wecom", "WQ", "field", "本人申请；主管/HR 查看"),
   entry("travel", "出差", "企微审批", "wecom", "CC", "travel", "本人申请；财务看费用"),
   entry("punch-fix", "补卡", "企微审批", "wecom", "BK", "attendance", "本人申请；主管/HR 查看"),
@@ -500,17 +500,6 @@ const roleEntries = {
   ]
 };
 
-const digitalSkills = [
-  skill("expense-assistant", "报销助理", "审批中心 / 报销", "receipt", "blue", "识别发票、费用类型、项目归属，生成报销草稿并交给本人确认。", "员工上传滴滴发票并备注校园招聘项目。", ["发票抬头与金额识别完成", "费用归类：招聘项目交通费", "建议附件命名：2026-07-02_校园招聘_滴滴_128元", "写回：报销审批草稿 + 事项中心"], "Workflow：OCR/结构化提取 -> 费用分类 -> 项目匹配 -> 人工确认 -> 审批草稿", "本人确认，财务最终审核", "报销审批、费用归类、项目费用"),
-  skill("travel-field-assistant", "差旅外勤助理", "审批中心 / 外勤出差", "travel", "mint", "把自然语言行程转成外勤/出差申请，补齐时间、地点、预算和审批链。", "下周三去华南理工宣讲，需行政支持易拉宝和差旅。", ["识别类型：外勤 + 出差", "地点：华南理工大学；事项：校园宣讲", "提醒材料：PPT、易拉宝、参会人日程", "写回：外勤/出差审批 + 日程"], "Chatflow：意图识别 -> 表单补全 -> 日程冲突检查 -> 人工确认 -> 审批提交", "本人确认，主管审批", "外勤审批、出差审批、日程"),
-  skill("weekly-report-assistant", "日报周报助理", "事项中心", "todo", "violet", "汇总事项、项目、审批和工作产出，生成日报/周报，标出偏离计划。", "主管查看团队本周事项完成情况和异常。", ["本周完成事项：14 项", "待跟进：合同风险意见、转正访谈", "偏离提醒：销售员工线索跟进低于计划", "写回：周报草稿 + 主管确认"], "Workflow：拉取事项/项目/审批 -> 摘要归类 -> 偏离判断 -> 主管确认 -> 月度量化沉淀", "本人或主管确认", "事项中心、月度工作量化"),
-  skill("meeting-schedule-assistant", "日程和会议助理", "会议室 / 日程", "meeting", "orange", "协调参会人、会议室、材料和提醒，把会议动作写入日程。", "安排转正面谈或校园宣讲会前准备会。", ["建议时间：周二 10:00-10:30", "会议室：A 会议室可用", "材料提醒：转正量化记录、面谈问题、PPT", "写回：会议室预订 + 日程提醒"], "Chatflow：参会人识别 -> 空闲时间/会议室查询 -> 材料清单 -> 人工确认 -> 日程写回", "发起人确认", "会议室、企微日程"),
-  skill("product-training-coach", "产品培训教练", "培训 / 知识库", "project", "mint", "基于产品资料和 SOP 做问答、学习路径和测验，帮助新人快速理解业务。", "新人询问出口易产品线、海外仓、专线、小包区别。", ["回答产品差异并给出处", "生成 5 道小测题", "标记薄弱知识点：海外仓场景", "写回：学习记录"], "Chatflow + RAG：知识检索 -> 引用回答 -> 测验生成 -> 学习记录", "员工自学，主管可看学习结果", "培训知识库、员工画像"),
-  skill("system-training-coach", "系统培训教练", "培训 / 系统使用", "toolbox", "blue", "教员工怎么用工作台、企微审批、权限申请和事项中心。", "员工不知道报销、权限、合同审批应该从哪里发起。", ["推荐入口：审批中心 / 权限申请 / 合同审批", "展示步骤：上传材料 -> AI 预处理 -> 人工确认 -> 审批", "常见错误：资料缺失、项目未关联", "写回：培训完成记录"], "Chatflow：问题分类 -> 操作指引 -> 权限判断 -> 学习记录", "员工确认已学会", "系统培训、帮助中心"),
-  skill("contract-approval-assistant", "合同审批助理", "审批中心 / 合同审批", "contract", "violet", "上传合同后先读全文，按低/中/高风险写入审批备注，再按阶段流转。老板不会第一时间看到。", "员工上传客户合同并提交审批。", ["低风险：主体、金额、签署信息完整", "中风险：付款节点与验收标准偏宽", "高风险：违约责任上限未明确", "写回：合同审批备注 + 当前审批阶段"], "Workflow：员工提交 -> AI 预审 -> 带教/主管审核 -> 法务审核 -> 总助复核 -> 老板终审 -> 归档", "带教/主管、法务、总助全部通过后，才进入老板终审", "合同审批、审批备注、事项中心"),
-  skill("quote-assistant", "报价助理", "销售 / 报价", "card", "orange", "根据客户、渠道、服务产品和规则生成报价草案；一期只做演示，正式版必须接价格规则。", "销售输入客户目的地、服务产品和预计重量。", ["生成报价草案：待接入价格规则", "提醒：成本、利润底线、有效期需系统校验", "建议审批：销售主管确认后发送", "写回：报价草稿"], "Workflow + 规则引擎：客户/渠道识别 -> 价格规则 -> 毛利校验 -> 主管确认 -> 报价输出", "销售主管确认；价格规则未接入前不得自动发送", "报价系统、客户资料")
-];
-
 let tasks = [
   task("T-1001", "校园招聘项目立项与角色分工", "project", "project", "主管", "processing", "2026-07-08", "项目系统"),
   task("T-1002", "员工试用期转正评估", "probation", "hr", "主管", "pending", "2026-07-05", "人事系统"),
@@ -551,10 +540,6 @@ function contractTask(id, title, owner, status, due, approvalStage, initiator, r
     approvalStage,
     result
   };
-}
-
-function skill(id, name, scene, icon, tone, summary, sampleInput, output, workflow, humanGate, writeBack) {
-  return { id, name, scene, icon, tone, summary, sampleInput, output, workflow, humanGate, writeBack };
 }
 
 function escapeHTML(value) {
@@ -965,19 +950,6 @@ function homeView() {
         </div>
       </section>
 
-      <section class="digital-skill-panel">
-        <div class="reference-section-head">
-          <div>
-            <h2>数字员工</h2>
-            <p>真实员工不叫助理；只有数字员工以“助理 / 教练”命名，并嵌入具体业务场景。</p>
-          </div>
-          <span class="tag">一期可演示</span>
-        </div>
-        <div class="digital-skill-grid">
-          ${digitalSkills.map(digitalSkillCard).join("")}
-        </div>
-      </section>
-
       <section class="ai-banner">
         <div>
           <h2>统一工作台，连接组织与权限</h2>
@@ -1012,7 +984,7 @@ function homeQuickItems(user) {
     { kind: "view", id: "org", title: "组织架构", text: "父子层级、人员画像与权限联动", icon: "org", tone: "violet" },
     { kind: "entry", id: "meeting-room", title: "会议室", text: "会议室预订、占用与行政协同", icon: "meeting", tone: "orange" },
     { kind: "entry", id: "permission", title: "权限申请", text: "岗位变更后自动建议权限", icon: "key", tone: "blue" },
-    { kind: "entry", id: "contract-approval", title: "合同审批", text: "AI 先读合同并写入风险备注", icon: "contract", tone: "violet" },
+    { kind: "entry", id: "contract-approval", title: "合同审批", text: "上传合同并提交审批", icon: "contract", tone: "violet" },
     { kind: "view", id: "recruiting", title: "招聘体系", text: "岗位画像、胜任力模型与流程协同", icon: "recruiting", tone: "mint" },
     roleItem
       ? { kind: "entry", id: roleItem.id, title: roleItem.name, text: roleItem.scope, icon: entryIconName(roleItem), tone: "orange" }
@@ -1041,23 +1013,6 @@ function recentCard(item) {
         <strong>${escapeHTML(item.name)}</strong>
         <p>${escapeHTML(source.name)} · ${escapeHTML(item.scope)}</p>
       </div>
-    </button>
-  `;
-}
-
-function digitalSkillById(id) {
-  return digitalSkills.find((item) => item.id === id);
-}
-
-function digitalSkillCard(item) {
-  return `
-    <button class="digital-skill-card" data-skill="${escapeHTML(item.id)}">
-      <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
-      <div>
-        <strong>${escapeHTML(item.name)}</strong>
-        <p>${escapeHTML(item.scene)}</p>
-      </div>
-      <em>${uiIcon("arrow-right")}</em>
     </button>
   `;
 }
@@ -1124,14 +1079,6 @@ function openEntryModal(entryId) {
   render();
 }
 
-function openDigitalSkillModal(skillId) {
-  const item = digitalSkillById(skillId);
-  if (!item) return;
-  state.modal = { type: "skill", skillId };
-  addAudit(`${state.user.name} 打开数字员工「${item.name}」Skill 演示。`);
-  render();
-}
-
 function openDepartmentModal(deptCode) {
   const dept = departmentByCode(deptCode);
   state.selectedDept = dept.code;
@@ -1162,7 +1109,6 @@ function renderModal() {
   if (!state.modal) return "";
   if (state.modal.type === "approval") return renderApprovalModal();
   if (state.modal.type === "entry") return renderEntryModal(findEntryById(state.modal.entryId));
-  if (state.modal.type === "skill") return renderDigitalSkillModal(digitalSkillById(state.modal.skillId));
   if (state.modal.type === "department") return renderDepartmentModal(departmentByCode(state.modal.deptCode));
   if (state.modal.type === "profile") return renderProfileModal(employeeProfiles[state.modal.personName]);
   return "";
@@ -1205,7 +1151,6 @@ function renderEntryModal(item) {
   if (!item) return "";
   if (item.taskType === "contract") return renderContractApprovalModal(item);
   const source = systemSources[item.source] || systemSources.ai_workbench;
-  const embeddedSkill = embeddedSkillForEntry(item);
   return modalShell(
     item.name,
     `${source.name} · ${item.scope}`,
@@ -1223,7 +1168,6 @@ function renderEntryModal(item) {
           </div>
         `).join("")}
       </div>
-      ${embeddedSkill ? embeddedSkillStrip(embeddedSkill) : ""}
       <div class="access-note">${escapeHTML(state.api.online ? "提交后会调用后端接口，写入审批/事项数据。" : "后端未连接：此处只展示表单与字段，不能提交真实流程。")}</div>
     `,
     `
@@ -1233,133 +1177,42 @@ function renderEntryModal(item) {
   );
 }
 
-function renderDigitalSkillModal(item) {
-  if (!item) return "";
-  return modalShell(
-    item.name,
-    `${item.scene} · 数字员工 Skill 演示`,
-    `
-      <div class="skill-demo-layout">
-        <section class="skill-brief">
-          <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
-          <div>
-            <h3>${escapeHTML(item.name)}</h3>
-            <p>${escapeHTML(item.summary)}</p>
-          </div>
-        </section>
-
-        <section class="skill-block">
-          <span>示例输入</span>
-          <strong>${escapeHTML(item.sampleInput)}</strong>
-        </section>
-
-        <section class="skill-block">
-          <span>后端 Skill 输出</span>
-          <div class="skill-output-list">
-            ${item.output.map((line) => `<div>${escapeHTML(line)}</div>`).join("")}
-          </div>
-        </section>
-
-        <section class="skill-workflow">
-          ${permissionFact("技能工作流", item.workflow)}
-          ${permissionFact("人工确认", item.humanGate)}
-          ${permissionFact("写回位置", item.writeBack)}
-          ${permissionFact("接口状态", state.api.online ? "后端已连接，可写入流程" : "后端未连接，当前只展示 Skill 设计")}
-        </section>
-      </div>
-    `,
-    `
-      <button class="ghost-btn" data-modal-close>取消</button>
-      <button class="primary-btn" data-run-skill="${escapeHTML(item.id)}">运行 Skill 流程</button>
-    `
-  );
-}
-
-function embeddedSkillForEntry(item) {
-  const map = {
-    expense: "expense-assistant",
-    field: "travel-field-assistant",
-    travel: "travel-field-assistant",
-    meeting: "meeting-schedule-assistant",
-    schedule: "meeting-schedule-assistant",
-    todo: "weekly-report-assistant",
-    contract: "contract-approval-assistant"
-  };
-  return digitalSkillById(map[item.taskType]);
-}
-
-function embeddedSkillStrip(item) {
-  return `
-    <div class="embedded-skill">
-      <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
-      <div>
-        <strong>${escapeHTML(item.name)}</strong>
-        <p>${escapeHTML(item.summary)}</p>
-      </div>
-      <button class="chip-btn" data-skill="${escapeHTML(item.id)}">查看 Skill</button>
-    </div>
-  `;
-}
-
 function renderContractApprovalModal(item) {
   const source = systemSources[item.source] || systemSources.ai_workbench;
   return modalShell(
     item.name,
-    "员工提交后先进入 AI 预审；老板不会第一时间看到，必须带教/主管、法务、总助都通过后才进入老板终审。",
+    "提交后按公司审批链流转，老板只在前置审核完成后收到终审待办。",
     `
       <div class="contract-layout">
         <div class="contract-upload">
           <span class="module-icon">${uiIcon("contract")}</span>
           <div>
             <div class="task-title">上传合同文件</div>
-            <p class="panel-note">后端接收 PDF / DOCX / TXT，先提取合同文本，再调用模型输出风险分级。</p>
+            <p class="panel-note">支持 PDF、DOCX、TXT；也可以直接粘贴合同正文。</p>
           </div>
           <input class="hidden-file" id="contractFile" type="file" accept=".pdf,.docx,.txt,.md" />
           <button class="ghost-btn" type="button" data-contract-file-pick>选择文件</button>
         </div>
-        <div class="contract-file-name" id="contractFileName">未选择文件，也可以直接粘贴合同文本。</div>
+        <div class="contract-file-name" id="contractFileName">未选择文件</div>
 
         <label class="contract-text-input">
-          <span>合同文本 / 模型分析输入</span>
-          <textarea id="contractText" placeholder="将合同正文粘贴到这里；或上传 PDF / DOCX / TXT 后直接提交给后端模型分析。"></textarea>
+          <span>合同正文</span>
+          <textarea id="contractText" placeholder="可选：如果没有合同文件，可将合同正文粘贴到这里。"></textarea>
         </label>
 
-        ${embeddedSkillStrip(digitalSkillById("contract-approval-assistant"))}
-
-        <div class="ai-risk-note">
-          <div class="risk-head">
-            <span class="tag">模型分析输出</span>
-            <strong>提交后由后端调用模型生成低 / 中 / 高风险</strong>
-          </div>
-          <div class="risk-list">
-            <div class="risk-item low">
-              <span>低风险</span>
-              <strong>等待模型读取合同后返回，不在前端默认写死。</strong>
-            </div>
-            <div class="risk-item medium">
-              <span>中风险</span>
-              <strong>等待模型读取合同后返回，不在前端默认写死。</strong>
-            </div>
-            <div class="risk-item high">
-              <span>高风险</span>
-              <strong>等待模型读取合同后返回，不在前端默认写死。</strong>
-            </div>
-          </div>
-          <div class="approval-remark">
-            <span>写入备注</span>
-            <strong>模型返回的风险 JSON 会写入审批备注，并随审批链逐步流转；法务审核通过后才到总助。</strong>
-          </div>
+        <div class="contract-process-note">
+          <strong>提交后生成审批备注</strong>
+          <span>风险分析结果会显示在事项中，并随审批流转给当前处理人。</span>
         </div>
 
         <div class="approval-chain">
-          ${contractApprovalStages.map((step, index) => `
+          ${contractApprovalStages.filter((step) => !["submitted", "ai_review", "archived"].includes(step.key)).map((step, index) => `
             <div class="chain-step">
               <span>${String(index + 1).padStart(2, "0")}</span>
               <strong>${escapeHTML(step.label)}</strong>
             </div>
           `).join("")}
         </div>
-        <div class="access-note">后端规则：合同状态为 submitted / ai_review / mentor_review / legal_review / assistant_review 时，老板待办不可见；只有 boss_review 或 archived 才进入老板视角。</div>
       </div>
     `,
     `
@@ -1677,7 +1530,43 @@ function renderTaskRow(item) {
           <button class="small-btn" data-need="${item.id}">需补充</button>
         `}
       </div>
+      ${item.analysis ? renderContractAnalysis(item.analysis) : ""}
     </div>
+  `;
+}
+
+function renderContractAnalysis(analysis) {
+  return `
+    <div class="contract-analysis">
+      <div class="analysis-head">
+        <strong>合同风险分析</strong>
+        <span>${escapeHTML(analysis.provider || "模型")} · ${escapeHTML(analysis.model || "")}</span>
+      </div>
+      <div class="analysis-summary">${escapeHTML(analysis.approvalRemark || "已生成审批备注。")}</div>
+      <div class="analysis-grid">
+        ${renderRiskColumn("高风险", analysis.highRisks || [], "high")}
+        ${renderRiskColumn("中风险", analysis.mediumRisks || [], "medium")}
+        ${renderRiskColumn("低风险", analysis.lowRisks || [], "low")}
+      </div>
+    </div>
+  `;
+}
+
+function renderRiskColumn(label, items, tone) {
+  const content = items.length
+    ? items.slice(0, 3).map((item) => `
+        <div class="analysis-risk">
+          <strong>${escapeHTML(item.title || "风险项")}</strong>
+          <p>${escapeHTML(item.reason || "需人工复核")}</p>
+          <span>${escapeHTML(item.suggestion || "请审批人确认")}</span>
+        </div>
+      `).join("")
+    : `<div class="analysis-risk muted">暂未识别到明确${escapeHTML(label)}。</div>`;
+  return `
+    <section class="analysis-column ${tone}">
+      <div class="analysis-column-title">${escapeHTML(label)} <em>${items.length}</em></div>
+      ${content}
+    </section>
   `;
 }
 
@@ -1907,18 +1796,6 @@ function bindViewEvents() {
     });
   });
 
-  document.querySelectorAll("[data-skill]").forEach((button) => {
-    button.addEventListener("click", () => {
-      openDigitalSkillModal(button.dataset.skill);
-    });
-  });
-
-  document.querySelectorAll("[data-run-skill]").forEach((button) => {
-    button.addEventListener("click", () => {
-      runSkillWorkflow(button.dataset.runSkill);
-    });
-  });
-
   document.querySelectorAll("[data-contract-file-pick]").forEach((button) => {
     button.addEventListener("click", () => {
       document.getElementById("contractFile")?.click();
@@ -2045,8 +1922,9 @@ function requireBackend(actionName) {
   return false;
 }
 
-function upsertBackendTask(newTask) {
+function upsertBackendTask(newTask, analysis) {
   if (!newTask) return;
+  if (analysis) newTask.analysis = analysis;
   tasks = [newTask, ...tasks.filter((item) => item.id !== newTask.id)];
 }
 
@@ -2070,7 +1948,7 @@ async function submitEntryWorkflow(item) {
             sourceName: source.name
           })
         });
-    upsertBackendTask(payload.task);
+    upsertBackendTask(payload.task, payload.analysis);
     addAudit("提交后端流程", {
       category: "接口",
       object: payload.task ? payload.task.id : item.id,
@@ -2115,40 +1993,6 @@ async function submitContractApproval() {
     method: "POST",
     body: formData
   });
-}
-
-async function runSkillWorkflow(skillId) {
-  const item = digitalSkillById(skillId);
-  if (!item || !requireBackend(`运行${item ? item.name : "Skill"}`)) return;
-  try {
-    const payload = await apiRequest(`/api/skills/${encodeURIComponent(skillId)}/run`, {
-      method: "POST",
-      body: JSON.stringify({ input: item.sampleInput })
-    });
-    upsertBackendTask(payload.task);
-    addAudit("运行后端 Skill", {
-      category: "接口",
-      object: item.name,
-      before: "前端示例输入",
-      after: payload.task ? `${payload.task.id} / ${statusName(payload.task.status)}` : "已返回运行结果",
-      impact: skillId === "contract-approval-assistant" ? "合同进入 AI 预审，老板暂不可见" : item.writeBack
-    });
-    state.modal = null;
-    state.view = "tasks";
-    render();
-  } catch (error) {
-    if (error.message.includes("Failed to fetch")) state.api.online = false;
-    state.api.message = `Skill 运行失败：${error.message}`;
-    addAudit("运行后端 Skill 失败", {
-      category: "接口",
-      object: item.name,
-      before: "准备运行",
-      after: error.message,
-      impact: "流程未写入"
-    });
-    alert(`Skill 运行失败：${error.message}`);
-    render();
-  }
 }
 
 function ownerFor(taskType) {

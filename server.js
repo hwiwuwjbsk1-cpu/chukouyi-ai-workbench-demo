@@ -166,6 +166,9 @@ async function handleApi(req, res, url) {
 
   const skillMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/run$/);
   if (req.method === "POST" && skillMatch) {
+    if (!["boss", "assistant"].includes(user.role)) {
+      throw httpError(403, "技能接口为后台配置入口，普通用户请从业务表单提交。");
+    }
     const body = await readJson(req);
     const result = await runSkill(user, decodeURIComponent(skillMatch[1]), body);
     sendJson(res, 201, result);
@@ -235,7 +238,8 @@ async function createContractApproval(user, body) {
       user.name,
       `${modelResult.provider}已输出低/中/高风险，当前仅发起人可见；老板暂不可见。`
     ),
-    contractId: contract.id
+    contractId: contract.id,
+    analysis: modelResult
   };
   contracts.unshift(contract);
   tasks.unshift(newTask);
