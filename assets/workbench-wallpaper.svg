@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7fcff"/>
+      <stop offset="0.38" stop-color="#dceefa"/>
+      <stop offset="0.72" stop-color="#c6dfef"/>
+      <stop offset="1" stop-color="#eef8ff"/>
+    </linearGradient>
+    <linearGradient id="blueA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fb7de"/>
+      <stop offset="0.55" stop-color="#d6edf8"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="blueB" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#effaff"/>
+      <stop offset="0.5" stop-color="#a7cfe7"/>
+      <stop offset="1" stop-color="#f9fdff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="34%" r="58%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="0.55" stop-color="#d9f1ff" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softNoise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.009 0.018" numOctaves="3" seed="12"/>
+      <feColorMatrix type="saturate" values="0.18"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.09"/>
+      </feComponentTransfer>
+      <feBlend mode="soft-light" in2="SourceGraphic"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect width="1600" height="1000" fill="url(#glow)"/>
+  <path d="M0 170 C180 104 306 192 470 126 C640 58 790 184 956 112 C1120 42 1302 132 1600 70 L1600 410 L0 410 Z" fill="#9ecae6" opacity="0.34"/>
+  <path d="M0 264 C170 214 310 286 492 226 C680 164 830 304 1012 224 C1198 142 1378 232 1600 178 L1600 514 L0 514 Z" fill="#d9eef9" opacity="0.74"/>
+  <path d="M0 420 C206 366 368 438 550 376 C760 306 890 476 1104 392 C1290 320 1430 398 1600 360 L1600 690 L0 690 Z" fill="url(#blueA)" opacity="0.82"/>
+  <path d="M0 565 C206 510 364 586 560 522 C760 456 920 620 1126 526 C1318 438 1450 522 1600 486 L1600 824 L0 824 Z" fill="url(#blueB)" opacity="0.68"/>
+  <path d="M0 742 C178 696 330 752 528 704 C760 646 910 806 1140 702 C1310 626 1452 714 1600 650 L1600 1000 L0 1000 Z" fill="#f6fbff" opacity="0.78"/>
+  <path d="M0 820 C194 786 346 850 560 792 C778 732 956 878 1160 780 C1332 696 1454 792 1600 738 L1600 1000 L0 1000 Z" fill="#bedbf0" opacity="0.34"/>
+  <rect width="1600" height="1000" fill="#ffffff" opacity="0.2" filter="url(#softNoise)"/>
+</svg>

@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# Local verification screenshots generated during UI checks.
+verify-*.png
+
