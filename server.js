@@ -124,6 +124,9 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/tasks") {
     const body = await readJson(req);
+    if (!canInitiateTaskType(user, body.type || "todo")) {
+      throw httpError(403, "当前角色无权发起该流程。");
+    }
     const newTask = task(
       nextId("T"),
       body.title || `${user.name} 发起：${body.entryId || "事项"}`,
@@ -142,7 +145,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/approvals/contracts") {
     if (!canInitiateContractApproval(user)) {
-      throw httpError(403, "老板账号只处理已流转到终审的合同待办，不能发起或上传合同。");
+      throw httpError(403, "当前角色只能处理合同待办或风险意见，不能发起或上传合同。");
     }
     const submission = await readContractSubmission(req);
     const payload = await createContractApproval(user, submission);
@@ -445,7 +448,46 @@ function canSeeContractTask(user, item) {
 }
 
 function canInitiateContractApproval(user) {
-  return user.role !== "boss";
+  return ["employee", "manager"].includes(user.role);
+}
+
+function canInitiateTaskType(user, type) {
+  const rolesByType = {
+    expense: "staff",
+    leave: "staff",
+    field: "staff",
+    travel: "staff",
+    attendance: "staff",
+    approval: "staff",
+    meeting: "all",
+    schedule: "all",
+    todo: "all",
+    permission: ["employee", "manager", "hr", "finance", "legal"],
+    contract: ["employee", "manager"],
+    payment: ["finance"],
+    expense_review: ["finance"],
+    invoice: ["finance"],
+    cost: ["finance"],
+    project_cost: ["finance"],
+    onboard: ["hr"],
+    probation: ["hr"],
+    transfer: ["hr"],
+    resign: ["hr"],
+    hr_file: ["hr"],
+    recruiting: ["boss", "hr", "manager"],
+    org_change: ["boss", "assistant"],
+    handover: ["boss", "assistant"],
+    project: ["employee", "manager", "assistant", "boss"],
+    work_deviation: ["manager", "boss"],
+    performance: ["boss"],
+    risk_overview: ["boss"],
+    legal: ["legal"],
+    risk: ["legal", "boss", "assistant"]
+  };
+  const allowed = rolesByType[type] || "staff";
+  if (allowed === "all") return true;
+  if (allowed === "staff") return user.role !== "boss";
+  return allowed.includes(user.role);
 }
 
 function requireUser(req) {

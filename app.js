@@ -496,6 +496,8 @@ const roleEntries = {
     entry("org-manage", "组织架构维护", "组织权限", "hr", "ZZ", "org_change", "全局组织"),
     entry("org-health", "组织状态", "人事系统", "hr", "ZZ", "org", "全局汇总"),
     entry("key-projects", "关键项目", "项目系统", "project", "XM", "project", "关键项目"),
+    entry("performance-result", "绩效结果", "AI 工作台", "ai_workbench", "JX", "performance", "全局汇总"),
+    entry("risk-overview", "风险事项", "AI 工作台", "ai_workbench", "FX", "risk_overview", "合同/组织/项目异常"),
     entry("recruiting-system", "招聘体系化搭建", "招聘工具", "recruiting", "ZP", "recruiting", "全局查看/督办")
   ]
 };
@@ -578,6 +580,7 @@ function uiIcon(name) {
     toolbox: `<path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7"></path><rect x="4" y="7" width="16" height="12" rx="3"></rect><path d="M4 12h16"></path><path d="M12 11v3"></path>`,
     project: `<path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z"></path><path d="M8 13h8"></path><path d="M8 16h5"></path>`,
     people: `<path d="M16 20v-1.3c0-1.8-1.5-3.2-3.4-3.2H7.4C5.5 15.5 4 16.9 4 18.7V20"></path><circle cx="10" cy="8" r="3"></circle><path d="M20 20v-1.1c0-1.4-1-2.6-2.4-3"></path><path d="M16.5 5.4a3 3 0 0 1 0 5.2"></path>`,
+    chart: `<path d="M4 19V5"></path><path d="M4 19h16"></path><rect x="7" y="11" width="2.8" height="5"></rect><rect x="11.2" y="8" width="2.8" height="8"></rect><rect x="15.4" y="6" width="2.8" height="10"></rect>`,
     alert: `<path d="M12 4 21 20H3L12 4Z"></path><path d="M12 9.5v4"></path><path d="M12 17h.01"></path>`,
     file: `<path d="M7 3h7l4 4v14H7V3Z"></path><path d="M14 3v5h5"></path>`,
     search: `<circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 5 5"></path>`,
@@ -631,6 +634,8 @@ function entryIconName(item) {
     "permission-handover": "permission",
     "boss-follow": "todo",
     "key-projects": "project",
+    "performance-result": "chart",
+    "risk-overview": "alert",
     "recruiting-system": "recruiting",
     "team-todo": "todo",
     "probation-alert": "clock",
@@ -654,7 +659,9 @@ function entryIconName(item) {
     org_change: "org",
     transfer: "org",
     probation: "clock",
-    hr_file: "file"
+    hr_file: "file",
+    performance: "chart",
+    risk_overview: "alert"
   };
   return byId[item.id] || byType[item.taskType] || "app";
 }
@@ -695,17 +702,122 @@ function isContractApprovalEntry(item) {
   return item?.id === "contract-approval" || item?.taskType === "contract";
 }
 
+function isApprovalEntry(item) {
+  return approvalEntries.some((entryItem) => entryItem.id === item?.id);
+}
+
+function isCommonEntry(item) {
+  return commonEntries.some((entryItem) => entryItem.id === item?.id);
+}
+
+function isRoleEntryForUser(user, item) {
+  return roleSpecificEntries(user).some((entryItem) => entryItem.id === item?.id);
+}
+
+function canViewPage(user, view) {
+  if (!user) return false;
+  if (["home", "tasks", "org"].includes(view)) return true;
+  if (view === "recruiting") return ["boss", "hr", "manager"].includes(user.role);
+  if (view === "permission") return ["boss", "assistant"].includes(user.role);
+  return false;
+}
+
+function canInitiateTaskType(user, taskType) {
+  if (!user) return false;
+  const rolesByTaskType = {
+    expense: "staff",
+    leave: "staff",
+    field: "staff",
+    travel: "staff",
+    attendance: "staff",
+    approval: "staff",
+    meeting: "all",
+    schedule: "all",
+    todo: "all",
+    permission: ["employee", "manager", "hr", "finance", "legal"],
+    contract: ["employee", "manager"],
+    payment: ["finance"],
+    expense_review: ["finance"],
+    invoice: ["finance"],
+    cost: ["finance"],
+    project_cost: ["finance"],
+    onboard: ["hr"],
+    probation: ["hr"],
+    transfer: ["hr"],
+    resign: ["hr"],
+    hr_file: ["hr"],
+    recruiting: ["boss", "hr", "manager"],
+    org_change: ["boss", "assistant"],
+    handover: ["boss", "assistant"],
+    project: ["employee", "manager", "assistant", "boss"],
+    work_deviation: ["manager", "boss"],
+    performance: ["boss"],
+    risk_overview: ["boss"],
+    legal: ["legal"],
+    risk: ["legal", "boss", "assistant"]
+  };
+  const allowed = rolesByTaskType[taskType] || "staff";
+  if (allowed === "all") return true;
+  if (allowed === "staff") return user.role !== "boss";
+  return allowed.includes(user.role);
+}
+
+function canAccessEntry(user, item) {
+  if (!user || !item) return false;
+  if (isRoleEntryForUser(user, item)) return true;
+  if (isCommonEntry(item)) {
+    if (item.id === "permission") return canInitiateTaskType(user, item.taskType);
+    return true;
+  }
+  if (isApprovalEntry(item)) return canInitiateEntry(user, item);
+  if (item.taskType === "recruiting") return canViewPage(user, "recruiting");
+  return canInitiateTaskType(user, item.taskType);
+}
+
 function canInitiateEntry(user, item) {
   if (!user || !item) return false;
-  if (isContractApprovalEntry(item)) return user.role !== "boss";
-  return true;
+  if (isContractApprovalEntry(item)) return canInitiateTaskType(user, "contract");
+  if (routedViewForEntry(item)) return false;
+  return canInitiateTaskType(user, item.taskType);
 }
 
 function entryRestrictionMessage(item) {
   if (isContractApprovalEntry(item)) {
-    return "老板账号只处理已流转到终审的合同待办，不能发起或上传合同。";
+    return "当前账号只处理合同待办或风险意见，不能发起或上传合同。";
+  }
+  if (item?.taskType === "payment") {
+    return "付款申请仅财务账号可发起，其他角色只能在事项中查看自己有权限的数据。";
+  }
+  if (item?.taskType === "permission") {
+    return "权限调整由老板或总助维护；普通账号只能提交权限申请。";
   }
   return "当前角色无权发起该流程。";
+}
+
+function routedViewForEntry(item) {
+  if (!item) return "";
+  const routeById = {
+    "org-manage": "org",
+    "org-health": "org",
+    "permission-handover": "tasks",
+    "boss-follow": "tasks",
+    "key-projects": "tasks",
+    "performance-result": "tasks",
+    "risk-overview": "tasks",
+    "recruiting-system": "recruiting",
+    "recruiting-flow": "recruiting",
+    "team-todo": "tasks",
+    "probation-alert": "tasks",
+    "work-deviation": "tasks",
+    "project-progress": "tasks",
+    handover: "tasks",
+    "my-projects": "tasks",
+    "legal-risk": "tasks",
+    "contract-archive": "tasks",
+    "contract-template": "tasks",
+    "continuous-risk": "tasks"
+  };
+  return routeById[item.id] || "";
 }
 
 function roleSpecificEntries(user) {
@@ -852,11 +964,7 @@ function renderWorkbench() {
         </div>
       </div>
       <nav class="side-nav">
-        ${navButton("home", "首页", "SY")}
-        ${navButton("tasks", "事项中心", "SX")}
-        ${navButton("org", "组织架构", "ZZ")}
-        ${navButton("recruiting", "招聘体系", "ZP")}
-        ${navButton("permission", "权限管理", "QX")}
+        ${navItemsForUser(user).map((item) => navButton(item.view, item.label)).join("")}
       </nav>
       <div class="sidebar-footer">
         <div class="sidebar-visual" aria-hidden="true"></div>
@@ -896,9 +1004,9 @@ function renderWorkbench() {
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.view === "recruiting" && !["boss", "hr", "manager"].includes(state.user.role)) {
-        addAudit("普通员工尝试访问招聘体系，被权限拦截。");
-        alert("当前角色无权访问招聘体系看板。");
+      if (!canViewPage(state.user, button.dataset.view)) {
+        addAudit(`${state.user.name} 尝试访问「${button.dataset.view}」，被权限拦截。`);
+        alert("当前角色无权访问该页面。");
         return;
       }
       state.view = button.dataset.view;
@@ -914,7 +1022,17 @@ function renderWorkbench() {
   bindPointerGlow();
 }
 
-function navButton(view, label, icon) {
+function navItemsForUser(user) {
+  return [
+    { view: "home", label: "首页" },
+    { view: "tasks", label: "事项中心" },
+    { view: "org", label: "组织架构" },
+    { view: "recruiting", label: "招聘体系" },
+    { view: "permission", label: "权限管理" }
+  ].filter((item) => canViewPage(user, item.view));
+}
+
+function navButton(view, label) {
   return `
     <button class="nav-btn ${state.view === view ? "active" : ""}" data-view="${view}">
       <span class="nav-icon">${uiIcon(navIconName(view))}</span>
@@ -937,6 +1055,7 @@ function sourceStrip() {
 }
 
 function renderCurrentView() {
+  if (!canViewPage(state.user, state.view)) return restrictedView("当前角色无权访问该页面。");
   if (state.view === "tasks") return tasksView();
   if (state.view === "org") return orgView();
   if (state.view === "recruiting") return recruitingView();
@@ -947,7 +1066,7 @@ function renderCurrentView() {
 function homeView() {
   const user = state.user;
   const quickItems = homeQuickItems(user);
-  const recentItems = [...commonEntries.slice(0, 3), ...roleSpecificEntries(user).slice(0, 1)];
+  const recentItems = recentItemsForUser(user);
   return `
     <div class="reference-home">
       <section class="welcome-zone">
@@ -994,19 +1113,111 @@ function homeView() {
 }
 
 function homeQuickItems(user) {
-  const roleItem = roleSpecificEntries(user)[0];
-  return [
-    { kind: "entry", id: "approval-center", title: "审批中心", text: "请假、报销、外勤、出差统一入口", icon: "approval", tone: "blue" },
-    { kind: "view", id: "tasks", title: "事项中心", text: "跨系统待办与办理结果沉淀", icon: "todo", tone: "mint" },
-    { kind: "view", id: "org", title: "组织架构", text: "父子层级、人员画像与权限联动", icon: "org", tone: "violet" },
-    { kind: "entry", id: "meeting-room", title: "会议室", text: "会议室预订、占用与行政协同", icon: "meeting", tone: "orange" },
-    { kind: "entry", id: "permission", title: "权限申请", text: "岗位变更后自动建议权限", icon: "key", tone: "blue" },
-    { kind: "entry", id: "contract-approval", title: "合同审批", text: "上传合同并提交审批", icon: "contract", tone: "violet" },
-    { kind: "view", id: "recruiting", title: "招聘体系", text: "岗位画像、胜任力模型与流程协同", icon: "recruiting", tone: "mint" },
-    roleItem
-      ? { kind: "entry", id: roleItem.id, title: roleItem.name, text: roleItem.scope, icon: entryIconName(roleItem), tone: "orange" }
-      : { kind: "entry", id: "todo", title: "我的待办", text: "当前用户相关事项", icon: "todo", tone: "blue" }
-  ].filter((item) => item.kind !== "entry" || canInitiateEntry(user, findEntryById(item.id) || item));
+  const base = {
+    approvals: { kind: "entry", id: "approval-center", title: "审批中心", text: "请假、报销、外勤、出差统一入口", icon: "approval", tone: "blue" },
+    tasks: { kind: "view", id: "tasks", title: "事项中心", text: "查看当前账号相关待办", icon: "todo", tone: "mint" },
+    org: { kind: "view", id: "org", title: "组织架构", text: "父子层级、人员画像与权限联动", icon: "org", tone: "violet" },
+    meeting: { kind: "entry", id: "meeting-room", title: "会议室", text: "会议室预订、占用与行政协同", icon: "meeting", tone: "orange" },
+    permission: { kind: "entry", id: "permission", title: "权限申请", text: "岗位或项目变化时申请权限", icon: "key", tone: "blue" },
+    schedule: { kind: "entry", id: "schedule", title: "日程", text: "会议、面谈、宣讲统一安排", icon: "clock", tone: "blue" }
+  };
+  const byRole = {
+    employee: [
+      base.tasks,
+      base.approvals,
+      base.permission,
+      base.schedule,
+      base.org,
+      quickFromEntry("my-projects", "orange"),
+      base.meeting
+    ],
+    manager: [
+      quickFromEntry("team-todo", "blue"),
+      quickFromEntry("probation-alert", "orange"),
+      quickFromEntry("work-deviation", "violet"),
+      quickFromEntry("project-progress", "mint"),
+      quickFromEntry("handover", "blue"),
+      base.approvals,
+      base.org
+    ],
+    hr: [
+      quickFromEntry("onboard", "blue"),
+      quickFromEntry("probation", "orange"),
+      quickFromEntry("transfer", "violet"),
+      quickFromEntry("resign", "mint"),
+      quickFromEntry("employee-file", "blue"),
+      quickFromEntry("recruiting-flow", "orange"),
+      base.org
+    ],
+    finance: [
+      quickFromEntry("expense-review", "blue"),
+      quickFromEntry("invoice", "mint"),
+      quickFromEntry("payment", "orange"),
+      quickFromEntry("cost-class", "violet"),
+      quickFromEntry("project-cost", "blue"),
+      base.approvals,
+      base.org
+    ],
+    legal: [
+      quickFromEntry("legal-risk", "orange"),
+      quickFromEntry("contract-archive", "blue"),
+      quickFromEntry("contract-template", "mint"),
+      quickFromEntry("continuous-risk", "violet"),
+      base.tasks,
+      base.approvals,
+      base.org
+    ],
+    assistant: [
+      quickFromEntry("org-manage", "blue"),
+      quickFromEntry("permission-handover", "violet"),
+      quickFromEntry("boss-follow", "orange"),
+      quickFromEntry("key-projects", "mint"),
+      base.tasks,
+      base.org,
+      base.meeting
+    ],
+    boss: [
+      quickFromEntry("org-health", "blue"),
+      quickFromEntry("key-projects", "mint"),
+      quickFromEntry("performance-result", "violet"),
+      quickFromEntry("risk-overview", "orange"),
+      quickFromEntry("recruiting-system", "blue"),
+      quickFromEntry("org-manage", "mint"),
+      base.tasks
+    ]
+  };
+  return (byRole[user.role] || [base.tasks, base.approvals, base.org])
+    .filter(Boolean)
+    .filter((item) => item.kind === "view" ? canViewPage(user, item.id) : canAccessEntry(user, findEntryById(item.id) || item));
+}
+
+function quickFromEntry(id, tone = "blue") {
+  const item = findEntryById(id);
+  if (!item) return null;
+  return {
+    kind: "entry",
+    id: item.id,
+    title: item.name,
+    text: item.scope,
+    icon: entryIconName(item),
+    tone
+  };
+}
+
+function recentItemsForUser(user) {
+  const idsByRole = {
+    employee: ["approval-center", "permission", "schedule", "my-projects"],
+    manager: ["team-todo", "work-deviation", "project-progress", "approval-center"],
+    hr: ["onboard", "probation", "transfer", "recruiting-flow"],
+    finance: ["expense-review", "invoice", "payment", "cost-class"],
+    legal: ["legal-risk", "contract-archive", "contract-template", "continuous-risk"],
+    assistant: ["org-manage", "permission-handover", "boss-follow", "key-projects"],
+    boss: ["org-health", "key-projects", "performance-result", "risk-overview"]
+  };
+  return (idsByRole[user.role] || ["approval-center", "todo", "meeting-room"])
+    .map(findEntryById)
+    .filter(Boolean)
+    .filter((item) => canAccessEntry(user, item));
 }
 
 function featureCard(item) {
@@ -1091,7 +1302,7 @@ function openApprovalModal() {
 function openEntryModal(entryId) {
   const item = findEntryById(entryId);
   if (!item) return;
-  if (!canInitiateEntry(state.user, item)) {
+  if (!canAccessEntry(state.user, item)) {
     addAudit(`${state.user.name} 尝试打开「${item.name}」发起页，被角色权限拦截。`);
     alert(entryRestrictionMessage(item));
     state.modal = null;
@@ -1165,9 +1376,11 @@ function renderApprovalModal() {
     "审批中心",
     "通用审批只保留一个入口，进入后按当前账号权限展示可发起的页面。",
     `
-      <div class="module-grid modal-grid">
-        ${visibleApprovalEntries.map((item) => moduleCard(item, true)).join("")}
-      </div>
+      ${visibleApprovalEntries.length ? `
+        <div class="module-grid modal-grid">
+          ${visibleApprovalEntries.map((item) => moduleCard(item, true)).join("")}
+        </div>
+      ` : `<div class="access-note">当前账号没有可发起的审批，只能在事项中心处理已流转到你的待办。</div>`}
       <div class="access-note">正式版本可以对接企微审批模板；Demo 先用弹窗展示二级页面，并把提交动作沉淀为事项卡。</div>
     `
   );
@@ -1793,22 +2006,28 @@ function bindViewEvents() {
       const id = button.dataset.entry;
       const item = findEntryById(id);
       if (!item) return;
-      if (["org-manage", "org-health"].includes(item.id)) {
-        state.view = "org";
-        state.selectedDept = state.user.departmentCode;
-        state.expandedDepts = departmentPathCodes(state.user.departmentCode);
-        addAudit(`${state.user.name} 进入组织架构页，查看组织与权限关系。`);
+      if (!canAccessEntry(state.user, item)) {
+        addAudit(`${state.user.name} 尝试打开「${item.name}」，被角色权限拦截。`);
+        alert(entryRestrictionMessage(item));
+        return;
+      }
+      const route = routedViewForEntry(item);
+      if (route) {
+        if (!canViewPage(state.user, route)) {
+          alert("当前角色无权访问该页面。");
+          return;
+        }
+        state.view = route;
+        if (route === "org") {
+          state.selectedDept = state.user.departmentCode;
+          state.expandedDepts = departmentPathCodes(state.user.departmentCode);
+        }
+        addAudit(`${state.user.name} 进入「${item.name}」对应看板。`);
         render();
         return;
       }
       if (item.id === "approval-center") {
         openApprovalModal();
-        return;
-      }
-      if (["recruiting-system", "recruiting-flow"].includes(item.id)) {
-        state.view = "recruiting";
-        addAudit(`${state.user.name} 进入招聘体系化看板。`);
-        render();
         return;
       }
       openEntryModal(item.id);
@@ -1932,6 +2151,23 @@ function bindPointerGlow() {
 }
 
 async function createTaskFromEntry(item) {
+  if (!canAccessEntry(state.user, item)) {
+    addAudit(`${state.user.name} 通过搜索尝试打开「${item.name}」，被角色权限拦截。`);
+    alert(entryRestrictionMessage(item));
+    return false;
+  }
+  const route = routedViewForEntry(item);
+  if (route) {
+    if (!canViewPage(state.user, route)) {
+      alert("当前角色无权访问该页面。");
+      return false;
+    }
+    state.view = route;
+    state.aiText = "";
+    addAudit(`${state.user.name} 通过搜索进入「${item.name}」对应看板。`);
+    render();
+    return true;
+  }
   return submitEntryWorkflow(item);
 }
 
