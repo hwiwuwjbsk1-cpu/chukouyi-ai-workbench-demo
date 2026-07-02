@@ -54,6 +54,7 @@ const contractApprovalStages = [
   { key: "submitted", label: "员工提交", owner: "员工" },
   { key: "ai_review", label: "合同审批助理 AI 预审", owner: "合同审批助理" },
   { key: "mentor_review", label: "带教/主管审核", owner: "主管" },
+  { key: "legal_review", label: "法务审核", owner: "法务接口人" },
   { key: "assistant_review", label: "总助复核", owner: "总助" },
   { key: "boss_review", label: "老板终审", owner: "老板" },
   { key: "archived", label: "归档/抄送", owner: "系统" }
@@ -506,7 +507,7 @@ const digitalSkills = [
   skill("meeting-schedule-assistant", "日程和会议助理", "会议室 / 日程", "meeting", "orange", "协调参会人、会议室、材料和提醒，把会议动作写入日程。", "安排转正面谈或校园宣讲会前准备会。", ["建议时间：周二 10:00-10:30", "会议室：A 会议室可用", "材料提醒：转正量化记录、面谈问题、PPT", "写回：会议室预订 + 日程提醒"], "Chatflow：参会人识别 -> 空闲时间/会议室查询 -> 材料清单 -> 人工确认 -> 日程写回", "发起人确认", "会议室、企微日程"),
   skill("product-training-coach", "产品培训教练", "培训 / 知识库", "project", "mint", "基于产品资料和 SOP 做问答、学习路径和测验，帮助新人快速理解业务。", "新人询问出口易产品线、海外仓、专线、小包区别。", ["回答产品差异并给出处", "生成 5 道小测题", "标记薄弱知识点：海外仓场景", "写回：学习记录"], "Chatflow + RAG：知识检索 -> 引用回答 -> 测验生成 -> 学习记录", "员工自学，主管可看学习结果", "培训知识库、员工画像"),
   skill("system-training-coach", "系统培训教练", "培训 / 系统使用", "toolbox", "blue", "教员工怎么用工作台、企微审批、权限申请和事项中心。", "员工不知道报销、权限、合同审批应该从哪里发起。", ["推荐入口：审批中心 / 权限申请 / 合同审批", "展示步骤：上传材料 -> AI 预处理 -> 人工确认 -> 审批", "常见错误：资料缺失、项目未关联", "写回：培训完成记录"], "Chatflow：问题分类 -> 操作指引 -> 权限判断 -> 学习记录", "员工确认已学会", "系统培训、帮助中心"),
-  skill("contract-approval-assistant", "合同审批助理", "审批中心 / 合同审批", "contract", "violet", "上传合同后先读全文，按低/中/高风险写入审批备注，再按阶段流转。老板不会第一时间看到。", "员工上传客户合同并提交审批。", ["低风险：主体、金额、签署信息完整", "中风险：付款节点与验收标准偏宽", "高风险：违约责任上限未明确", "写回：合同审批备注 + 当前审批阶段"], "Workflow：员工提交 -> AI 预审 -> 带教/主管审核 -> 总助复核 -> 老板终审 -> 归档", "带教/主管、总助全部通过后，才进入老板终审", "合同审批、审批备注、事项中心"),
+  skill("contract-approval-assistant", "合同审批助理", "审批中心 / 合同审批", "contract", "violet", "上传合同后先读全文，按低/中/高风险写入审批备注，再按阶段流转。老板不会第一时间看到。", "员工上传客户合同并提交审批。", ["低风险：主体、金额、签署信息完整", "中风险：付款节点与验收标准偏宽", "高风险：违约责任上限未明确", "写回：合同审批备注 + 当前审批阶段"], "Workflow：员工提交 -> AI 预审 -> 带教/主管审核 -> 法务审核 -> 总助复核 -> 老板终审 -> 归档", "带教/主管、法务、总助全部通过后，才进入老板终审", "合同审批、审批备注、事项中心"),
   skill("quote-assistant", "报价助理", "销售 / 报价", "card", "orange", "根据客户、渠道、服务产品和规则生成报价草案；一期只做演示，正式版必须接价格规则。", "销售输入客户目的地、服务产品和预计重量。", ["生成报价草案：待接入价格规则", "提醒：成本、利润底线、有效期需系统校验", "建议审批：销售主管确认后发送", "写回：报价草稿"], "Workflow + 规则引擎：客户/渠道识别 -> 价格规则 -> 毛利校验 -> 主管确认 -> 报价输出", "销售主管确认；价格规则未接入前不得自动发送", "报价系统、客户资料")
 ];
 
@@ -698,6 +699,7 @@ function canSeeContractTask(user, item) {
   const stage = item.approvalStage || "mentor_review";
   if (["submitted", "ai_review"].includes(stage)) return false;
   if (stage === "mentor_review") return user.role === "manager";
+  if (stage === "legal_review") return user.role === "legal";
   if (stage === "assistant_review") return user.role === "assistant";
   if (stage === "boss_review") return ["boss", "assistant"].includes(user.role);
   if (stage === "archived") return ["boss", "assistant", "manager", "legal"].includes(user.role);
@@ -1302,7 +1304,7 @@ function renderContractApprovalModal(item) {
   const source = systemSources[item.source] || systemSources.ai_workbench;
   return modalShell(
     item.name,
-    "员工提交后先进入 AI 预审；老板不会第一时间看到，只有前置审核全部通过后才进入老板终审。",
+    "员工提交后先进入 AI 预审；老板不会第一时间看到，必须带教/主管、法务、总助都通过后才进入老板终审。",
     `
       <div class="contract-layout">
         <div class="contract-upload">
@@ -1337,7 +1339,7 @@ function renderContractApprovalModal(item) {
           </div>
           <div class="approval-remark">
             <span>写入备注</span>
-            <strong>AI 风险备注随审批链逐步流转；老板仅在带教/主管和总助都审核通过后收到终审待办。</strong>
+            <strong>AI 风险备注随审批链逐步流转；总助只能在法务审核通过后收到复核待办，老板仅在总助复核通过后收到终审待办。</strong>
           </div>
         </div>
 
@@ -1349,7 +1351,7 @@ function renderContractApprovalModal(item) {
             </div>
           `).join("")}
         </div>
-        <div class="access-note">后端规则：合同状态为 submitted / ai_review / mentor_review / assistant_review 时，老板待办不可见；只有 boss_review 或 archived 才进入老板视角。</div>
+        <div class="access-note">后端规则：合同状态为 submitted / ai_review / mentor_review / legal_review / assistant_review 时，老板待办不可见；只有 boss_review 或 archived 才进入老板视角。</div>
       </div>
     `,
     `
@@ -1362,7 +1364,7 @@ function renderContractApprovalModal(item) {
 function entryFields(item) {
   const fields = {
     expense: [["费用类型", "交通/项目/行政费用"], ["关联项目", "校园招聘项目"], ["附件", "发票 OCR 识别后自动命名"], ["审批链", "本人 -> 主管 -> 财务"]],
-    contract: [["合同文件", "上传 PDF / Word / 图片扫描件"], ["AI 读取", "先读完整合同，再生成风险备注"], ["风险备注", "低/中/高风险写入审批备注，按阶段可见"], ["审批链", "员工提交 -> AI 预审 -> 带教/主管 -> 总助 -> 老板终审 -> 归档"]],
+    contract: [["合同文件", "上传 PDF / Word / 图片扫描件"], ["AI 读取", "先读完整合同，再生成风险备注"], ["风险备注", "低/中/高风险写入审批备注，按阶段可见"], ["审批链", "员工提交 -> AI 预审 -> 带教/主管 -> 法务 -> 总助 -> 老板终审 -> 归档"]],
     leave: [["请假类型", "年假/事假/病假"], ["开始时间", "选择日期时间"], ["结束时间", "选择日期时间"], ["审批链", "本人 -> 直属主管 -> HR 汇总"]],
     field: [["外勤地点", "客户/学校/供应商地址"], ["外勤原因", "拜访、宣讲、交付支持"], ["审批链", "本人 -> 直属主管"]],
     travel: [["出差地点", "城市/客户/项目"], ["预算归属", "项目或部门费用"], ["审批链", "本人 -> 主管 -> 财务"]],

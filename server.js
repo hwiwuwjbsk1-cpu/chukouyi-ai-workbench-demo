@@ -22,6 +22,7 @@ const contractStages = [
   "submitted",
   "ai_review",
   "mentor_review",
+  "legal_review",
   "assistant_review",
   "boss_review",
   "archived"
@@ -206,12 +207,14 @@ function advanceContract(user, contractId) {
   const currentIndex = contractStages.indexOf(contract.approvalStage);
   const currentStage = contract.approvalStage;
   if (currentStage === "mentor_review" && user.role !== "manager") throw httpError(403, "需带教/主管审核");
+  if (currentStage === "legal_review" && user.role !== "legal") throw httpError(403, "需法务审核");
   if (currentStage === "assistant_review" && user.role !== "assistant") throw httpError(403, "需总助复核");
   if (currentStage === "boss_review" && user.role !== "boss") throw httpError(403, "需老板终审");
 
   const nextStage = contractStages[Math.min(currentIndex + 1, contractStages.length - 1)];
   const nextOwner = {
     mentor_review: "主管",
+    legal_review: "法务接口人",
     assistant_review: "总助",
     boss_review: "老板",
     archived: "系统"
@@ -224,7 +227,7 @@ function advanceContract(user, contractId) {
   relatedTask.status = nextStage === "archived" ? "completed" : "pending";
   relatedTask.title = titleForContractStage(contract.initiator, nextStage);
   relatedTask.result = nextStage === "boss_review"
-    ? "前置审核已完成，进入老板终审待办。"
+    ? "带教/主管、法务、总助均已审核完成，进入老板终审待办。"
     : "审批阶段已更新。";
 
   return { contract, task: relatedTask };
@@ -261,6 +264,7 @@ function titleForContractStage(initiator, stage) {
   return {
     ai_review: `${initiator} 发起：合同审批（AI 预审中）`,
     mentor_review: `${initiator} 发起：合同审批待带教/主管审核`,
+    legal_review: `${initiator} 发起：合同审批待法务审核`,
     assistant_review: `${initiator} 发起：合同审批待总助复核`,
     boss_review: `${initiator} 发起：合同审批待老板终审`,
     archived: `${initiator} 发起：合同审批已归档`
@@ -292,6 +296,7 @@ function canSeeContractTask(user, item) {
   if (item.initiator === user.name || item.initiator === user.username) return true;
   if (["submitted", "ai_review"].includes(item.approvalStage)) return false;
   if (item.approvalStage === "mentor_review") return user.role === "manager";
+  if (item.approvalStage === "legal_review") return user.role === "legal";
   if (item.approvalStage === "assistant_review") return user.role === "assistant";
   if (item.approvalStage === "boss_review") return ["boss", "assistant"].includes(user.role);
   if (item.approvalStage === "archived") return ["boss", "assistant", "manager", "legal"].includes(user.role);
