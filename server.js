@@ -13,6 +13,7 @@ const accounts = {
   manger: account("主管", "manager", "主管", "产品及运营部", "product", "部门主管", "老板", "本人 + 团队 + 负责项目"),
   hr: account("HR", "hr", "HR", "人力行政部", "hr", "HRBP", "老板", "全员人事数据"),
   finance: account("财务", "finance", "财务", "财务部", "finance", "财务专员", "老板", "财务相关数据"),
+  legal: account("法务接口人", "legal", "法务", "法务", "legal", "法务接口人", "老板", "合同模板、风险意见、归档合同"),
   assistant: account("总助", "assistant", "总助", "总裁办", "ceo_office", "总经理助理", "老板", "全局组织与授权管理"),
   boss: account("老板", "boss", "老板", "总裁办", "ceo_office", "总经理", "无", "全局汇总 + 授权明细")
 };
@@ -34,6 +35,7 @@ let tasks = [
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限", "系统"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统", "系统"),
   contractTask("T-1004", "客户合同已完成 AI 预审，待带教/主管审核", "主管", "pending", "2026-07-04", "mentor_review", "员工", "AI 已写入低/中/高风险备注，暂不进入老板待办。"),
+  task("T-1008", "合同归档风险意见复核", "legal", "legal", "法务接口人", "pending", "2026-07-05", "法务系统", "系统"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具", "系统")
 ];
 
@@ -280,6 +282,7 @@ function canSeeTask(user, item) {
   if (user.role === "boss") return true;
   if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
   if (user.role === "finance") return item.source === "finance" || item.type === "expense";
+  if (user.role === "legal") return item.source === "legal" || ["legal", "risk"].includes(item.type);
   if (user.role === "hr") return ["hr", "recruiting"].includes(item.source) || ["probation", "onboard", "transfer"].includes(item.type);
   if (user.role === "manager") return ["project", "hr", "ai_workbench"].includes(item.source) || item.approvalStage === "mentor_review";
   return ["finance", "ai_workbench"].includes(item.source) || item.initiator === user.name;
@@ -291,7 +294,7 @@ function canSeeContractTask(user, item) {
   if (item.approvalStage === "mentor_review") return user.role === "manager";
   if (item.approvalStage === "assistant_review") return user.role === "assistant";
   if (item.approvalStage === "boss_review") return ["boss", "assistant"].includes(user.role);
-  if (item.approvalStage === "archived") return ["boss", "assistant", "manager"].includes(user.role);
+  if (item.approvalStage === "archived") return ["boss", "assistant", "manager", "legal"].includes(user.role);
   return false;
 }
 

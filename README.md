@@ -58,4 +58,5 @@ http://localhost:3000
 - `employee`
 - `hr`
 - `finance`
+- `legal`
 - `assistant`

@@ -107,6 +107,17 @@ const accounts = {
     manager: "老板",
     scope: "财务相关数据"
   },
+  legal: {
+    password: "123456",
+    name: "法务接口人",
+    role: "legal",
+    roleName: "法务",
+    department: "法务",
+    departmentCode: "legal",
+    position: "法务接口人",
+    manager: "老板",
+    scope: "合同模板、风险意见、归档合同"
+  },
   assistant: {
     password: "123456",
     name: "总助",
@@ -468,6 +479,12 @@ const roleEntries = {
     entry("cost-class", "费用归类", "财务系统", "finance", "FY", "cost", "全部财务"),
     entry("project-cost", "项目费用", "财务/项目", "finance", "XM", "project_cost", "项目费用")
   ],
+  legal: [
+    entry("legal-risk", "风险意见", "法务系统", "legal", "FX", "risk", "合同风险"),
+    entry("contract-archive", "合同归档", "法务系统", "legal", "GD", "legal", "归档合同"),
+    entry("contract-template", "合同模板", "法务系统", "legal", "MB", "legal", "模板管理"),
+    entry("continuous-risk", "持续风控", "法务系统", "legal", "FK", "risk", "履约风险")
+  ],
   assistant: [
     entry("org-manage", "组织架构维护", "组织权限", "hr", "ZZ", "org_change", "全局组织"),
     entry("permission-handover", "权限交接", "AI 工作台", "ai_workbench", "JQ", "handover", "组织变更"),
@@ -500,6 +517,7 @@ let tasks = [
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统"),
   contractTask("T-1004", "客户合同已完成 AI 预审，待带教/主管审核", "主管", "pending", "2026-07-04", "mentor_review", "员工", "AI 已写入低/中/高风险备注，暂不进入老板待办。"),
+  task("T-1008", "合同归档风险意见复核", "legal", "legal", "法务接口人", "pending", "2026-07-05", "法务系统"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具")
 ];
 
@@ -665,6 +683,7 @@ function canSeeTask(user, item) {
   if (user.role === "boss") return true;
   if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
   if (user.role === "finance") return item.source === "finance" || item.type === "expense";
+  if (user.role === "legal") return item.source === "legal" || ["legal", "risk"].includes(item.type);
   if (user.role === "hr") return ["hr", "recruiting"].includes(item.source) || ["probation", "onboard", "transfer"].includes(item.type);
   if (user.role === "manager") return ["project", "hr", "ai_workbench"].includes(item.source);
   return ["finance", "ai_workbench"].includes(item.source) || item.initiator === user.name;
@@ -681,7 +700,7 @@ function canSeeContractTask(user, item) {
   if (stage === "mentor_review") return user.role === "manager";
   if (stage === "assistant_review") return user.role === "assistant";
   if (stage === "boss_review") return ["boss", "assistant"].includes(user.role);
-  if (stage === "archived") return ["boss", "assistant", "manager"].includes(user.role);
+  if (stage === "archived") return ["boss", "assistant", "manager", "legal"].includes(user.role);
   return false;
 }
 
@@ -1565,6 +1584,7 @@ function canAccessDepartment(user, dept) {
   if (isDepartmentInSubtree(dept.code, user.departmentCode)) return true;
   if (user.role === "hr" && dept.code === "hr") return true;
   if (user.role === "finance" && dept.code === "finance") return true;
+  if (user.role === "legal" && dept.code === "legal") return true;
   if (user.role === "manager" && dept.code === "product") return true;
   return false;
 }
@@ -1574,6 +1594,7 @@ function canViewProfileDetail(user, profileItem) {
   if (user.name === profileItem.name) return true;
   if (canManageOrg(user)) return true;
   if (user.role === "hr") return true;
+  if (user.role === "legal" && user.departmentCode === profileItem.departmentCode) return true;
   if (user.role === "manager" && user.departmentCode === profileItem.departmentCode) return true;
   return false;
 }
@@ -1676,7 +1697,8 @@ function permissionRows() {
     { name: "转正", roles: "HR/主管/老板", scope: "主管看本团队，HR 看全员，老板看关键节点和异常。" },
     { name: "工作量化", roles: "本人/主管", scope: "员工看自己的月度总结；低于阈值时提醒直属主管确认是否偏离计划或方向。" },
     { name: "招聘体系", roles: "老板/HR/相关主管", scope: "老板看全局，HR 维护，主管看参与岗位。" },
-    { name: "付款", roles: "财务/老板", scope: "财务看明细，老板看汇总和异常，不对普通员工开放。" }
+    { name: "付款", roles: "财务/老板", scope: "财务看明细，老板看汇总和异常，不对普通员工开放。" },
+    { name: "法务资料", roles: "法务/老板/总助", scope: "法务看合同模板、风险意见和归档合同；普通员工只看自己发起的合同流程。" }
   ];
 }
 
