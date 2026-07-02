@@ -691,6 +691,23 @@ function canSeeContractTask(user, item) {
   return false;
 }
 
+function isContractApprovalEntry(item) {
+  return item?.id === "contract-approval" || item?.taskType === "contract";
+}
+
+function canInitiateEntry(user, item) {
+  if (!user || !item) return false;
+  if (isContractApprovalEntry(item)) return user.role !== "boss";
+  return true;
+}
+
+function entryRestrictionMessage(item) {
+  if (isContractApprovalEntry(item)) {
+    return "老板账号只处理已流转到终审的合同待办，不能发起或上传合同。";
+  }
+  return "当前角色无权发起该流程。";
+}
+
 function roleSpecificEntries(user) {
   return roleEntries[user.role] || [];
 }
@@ -989,7 +1006,7 @@ function homeQuickItems(user) {
     roleItem
       ? { kind: "entry", id: roleItem.id, title: roleItem.name, text: roleItem.scope, icon: entryIconName(roleItem), tone: "orange" }
       : { kind: "entry", id: "todo", title: "我的待办", text: "当前用户相关事项", icon: "todo", tone: "blue" }
-  ];
+  ].filter((item) => item.kind !== "entry" || canInitiateEntry(user, findEntryById(item.id) || item));
 }
 
 function featureCard(item) {
@@ -1074,6 +1091,14 @@ function openApprovalModal() {
 function openEntryModal(entryId) {
   const item = findEntryById(entryId);
   if (!item) return;
+  if (!canInitiateEntry(state.user, item)) {
+    addAudit(`${state.user.name} 尝试打开「${item.name}」发起页，被角色权限拦截。`);
+    alert(entryRestrictionMessage(item));
+    state.modal = null;
+    state.view = "tasks";
+    render();
+    return;
+  }
   state.modal = { type: "entry", entryId };
   addAudit(`${state.user.name} 打开「${item.name}」办理页。`);
   render();
@@ -1135,12 +1160,13 @@ function modalShell(title, note, body, footer = "") {
 }
 
 function renderApprovalModal() {
+  const visibleApprovalEntries = approvalEntries.filter((item) => canInitiateEntry(state.user, item));
   return modalShell(
     "审批中心",
-    "通用审批只保留一个入口，进入后再选择请假、报销、外勤、出差、补卡等具体页面。",
+    "通用审批只保留一个入口，进入后按当前账号权限展示可发起的页面。",
     `
       <div class="module-grid modal-grid">
-        ${approvalEntries.map((item) => moduleCard(item, true)).join("")}
+        ${visibleApprovalEntries.map((item) => moduleCard(item, true)).join("")}
       </div>
       <div class="access-note">正式版本可以对接企微审批模板；Demo 先用弹窗展示二级页面，并把提交动作沉淀为事项卡。</div>
     `
@@ -1931,6 +1957,14 @@ function upsertBackendTask(newTask, analysis) {
 async function submitEntryWorkflow(item) {
   if (item.id === "approval-center") {
     openApprovalModal();
+    return;
+  }
+  if (!canInitiateEntry(state.user, item)) {
+    addAudit(`${state.user.name} 尝试提交「${item.name}」，被角色权限拦截。`);
+    alert(entryRestrictionMessage(item));
+    state.modal = null;
+    state.view = "tasks";
+    render();
     return;
   }
   if (!requireBackend(`提交${item.name}`)) return;

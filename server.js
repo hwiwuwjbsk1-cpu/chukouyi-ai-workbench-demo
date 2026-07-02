@@ -141,6 +141,9 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/approvals/contracts") {
+    if (!canInitiateContractApproval(user)) {
+      throw httpError(403, "老板账号只处理已流转到终审的合同待办，不能发起或上传合同。");
+    }
     const submission = await readContractSubmission(req);
     const payload = await createContractApproval(user, submission);
     sendJson(res, 201, payload);
@@ -439,6 +442,10 @@ function canSeeContractTask(user, item) {
   if (item.approvalStage === "boss_review") return ["boss", "assistant"].includes(user.role);
   if (item.approvalStage === "archived") return ["boss", "assistant", "manager", "legal"].includes(user.role);
   return false;
+}
+
+function canInitiateContractApproval(user) {
+  return user.role !== "boss";
 }
 
 function requireUser(req) {
