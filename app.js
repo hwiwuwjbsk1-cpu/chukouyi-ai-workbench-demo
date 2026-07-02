@@ -9,6 +9,11 @@ const state = {
   selectedPerson: "",
   expandedDepts: ["bfe"],
   modal: null,
+  api: {
+    online: false,
+    token: "",
+    message: "后端未连接，静态展示模式"
+  },
   audit: [
     {
       time: "2026-07-01 09:00",
@@ -44,6 +49,15 @@ const systemSources = {
   legal: { name: "法务系统", mode: "mock" },
   ai_workbench: { name: "AI 工作台", mode: "native" }
 };
+
+const contractApprovalStages = [
+  { key: "submitted", label: "员工提交", owner: "员工" },
+  { key: "ai_review", label: "合同审批助理 AI 预审", owner: "合同审批助理" },
+  { key: "mentor_review", label: "带教/主管审核", owner: "主管" },
+  { key: "assistant_review", label: "总助复核", owner: "总助" },
+  { key: "boss_review", label: "老板终审", owner: "老板" },
+  { key: "archived", label: "归档/抄送", owner: "系统" }
+];
 
 const managerAccount = {
   password: "123456",
@@ -188,8 +202,8 @@ const orgDepartments = [
     code: "legal",
     parentCode: "ceo_office",
     name: "法务",
-    lead: "法务助手",
-    members: ["法务助手", "外部律师"],
+    lead: "法务接口人",
+    members: ["法务接口人", "外部律师"],
     docs: ["合同模板", "风险意见", "归档合同", "持续风控清单"],
     dataScope: "合同审批、AI 风险备注、法务意见",
     workflow: "合同上传、AI 风险备注、逐级审批",
@@ -404,8 +418,8 @@ const employeeProfiles = {
   "投资孵化负责人": profile("投资孵化负责人", "投资孵化", "investment", "投资孵化负责人", "总助", ["项目评估", "投后跟进", "商业分析"], "孵化项目和投后跟进", "负责投资孵化项目的资料和节点跟进。", "交接时重点确认项目授权、投后资料和跟进记录。", 84, "孵化项目跟进中", "投融资资料高敏。"),
   "运力负责人": profile("运力负责人", "运力中心", "capacity_center", "运力负责人", "老板", ["渠道资源", "运力协调", "运输方案"], "国际运输与运力资源协调", "交接时重点确认渠道价格、包机协议和供应商资料。", "渠道价格属于保密信息。", 87, "运力事项正常", "渠道价格属于保密信息。"),
   "仓储负责人": profile("仓储负责人", "仓储操作中心", "warehouse_ops", "仓储负责人", "老板", ["仓储操作", "异常处理", "排班协调"], "仓储操作和异常件处理", "负责仓储 SOP、操作排班和异常件闭环。", "交接时重点确认仓储 SOP、异常记录和区域权限。", 83, "仓储异常可控", "仓储数据按区域授权。"),
-  "法务助手": profile("法务助手", "法务组", "legal", "法务接口人", "老板", ["合同审核", "风险提示", "归档"], "合同审批、风险意见、持续风控", "负责合同风险意见和归档跟踪。", "交接时确认合同模板、风险意见和持续风控清单。", 87, "合同风险意见 4 单", "合同资料按项目授权。"),
-  "外部律师": profile("外部律师", "法务组", "legal", "外部顾问", "法务助手", ["法律审查", "争议处理", "合同条款"], "外部法务支持", "仅在授权事项内参与法务协作。", "交接时确认授权范围和资料脱敏。", 75, "按事项协作", "不应开放公司内部全量资料。")
+  "法务接口人": profile("法务接口人", "法务组", "legal", "法务接口人", "老板", ["合同审核", "风险提示", "归档"], "合同审批、风险意见、持续风控", "负责合同风险意见和归档跟踪。", "交接时确认合同模板、风险意见和持续风控清单。", 87, "合同风险意见 4 单", "合同资料按项目授权。"),
+  "外部律师": profile("外部律师", "法务组", "legal", "外部顾问", "法务接口人", ["法律审查", "争议处理", "合同条款"], "外部法务支持", "仅在授权事项内参与法务协作。", "交接时确认授权范围和资料脱敏。", 75, "按事项协作", "不应开放公司内部全量资料。")
 };
 
 const approvalEntries = [
@@ -468,13 +482,24 @@ const roleEntries = {
   ]
 };
 
+const digitalSkills = [
+  skill("expense-assistant", "报销助理", "审批中心 / 报销", "receipt", "blue", "识别发票、费用类型、项目归属，生成报销草稿并交给本人确认。", "员工上传滴滴发票并备注校园招聘项目。", ["发票抬头与金额识别完成", "费用归类：招聘项目交通费", "建议附件命名：2026-07-02_校园招聘_滴滴_128元", "写回：报销审批草稿 + 事项中心"], "Workflow：OCR/结构化提取 -> 费用分类 -> 项目匹配 -> 人工确认 -> 审批草稿", "本人确认，财务最终审核", "报销审批、费用归类、项目费用"),
+  skill("travel-field-assistant", "差旅外勤助理", "审批中心 / 外勤出差", "travel", "mint", "把自然语言行程转成外勤/出差申请，补齐时间、地点、预算和审批链。", "下周三去华南理工宣讲，需行政支持易拉宝和差旅。", ["识别类型：外勤 + 出差", "地点：华南理工大学；事项：校园宣讲", "提醒材料：PPT、易拉宝、参会人日程", "写回：外勤/出差审批 + 日程"], "Chatflow：意图识别 -> 表单补全 -> 日程冲突检查 -> 人工确认 -> 审批提交", "本人确认，主管审批", "外勤审批、出差审批、日程"),
+  skill("weekly-report-assistant", "日报周报助理", "事项中心", "todo", "violet", "汇总事项、项目、审批和工作产出，生成日报/周报，标出偏离计划。", "主管查看团队本周事项完成情况和异常。", ["本周完成事项：14 项", "待跟进：合同风险意见、转正访谈", "偏离提醒：销售员工线索跟进低于计划", "写回：周报草稿 + 主管确认"], "Workflow：拉取事项/项目/审批 -> 摘要归类 -> 偏离判断 -> 主管确认 -> 月度量化沉淀", "本人或主管确认", "事项中心、月度工作量化"),
+  skill("meeting-schedule-assistant", "日程和会议助理", "会议室 / 日程", "meeting", "orange", "协调参会人、会议室、材料和提醒，把会议动作写入日程。", "安排转正面谈或校园宣讲会前准备会。", ["建议时间：周二 10:00-10:30", "会议室：A 会议室可用", "材料提醒：转正量化记录、面谈问题、PPT", "写回：会议室预订 + 日程提醒"], "Chatflow：参会人识别 -> 空闲时间/会议室查询 -> 材料清单 -> 人工确认 -> 日程写回", "发起人确认", "会议室、企微日程"),
+  skill("product-training-coach", "产品培训教练", "培训 / 知识库", "project", "mint", "基于产品资料和 SOP 做问答、学习路径和测验，帮助新人快速理解业务。", "新人询问出口易产品线、海外仓、专线、小包区别。", ["回答产品差异并给出处", "生成 5 道小测题", "标记薄弱知识点：海外仓场景", "写回：学习记录"], "Chatflow + RAG：知识检索 -> 引用回答 -> 测验生成 -> 学习记录", "员工自学，主管可看学习结果", "培训知识库、员工画像"),
+  skill("system-training-coach", "系统培训教练", "培训 / 系统使用", "toolbox", "blue", "教员工怎么用工作台、企微审批、权限申请和事项中心。", "员工不知道报销、权限、合同审批应该从哪里发起。", ["推荐入口：审批中心 / 权限申请 / 合同审批", "展示步骤：上传材料 -> AI 预处理 -> 人工确认 -> 审批", "常见错误：资料缺失、项目未关联", "写回：培训完成记录"], "Chatflow：问题分类 -> 操作指引 -> 权限判断 -> 学习记录", "员工确认已学会", "系统培训、帮助中心"),
+  skill("contract-approval-assistant", "合同审批助理", "审批中心 / 合同审批", "contract", "violet", "上传合同后先读全文，按低/中/高风险写入审批备注，再按阶段流转。老板不会第一时间看到。", "员工上传客户合同并提交审批。", ["低风险：主体、金额、签署信息完整", "中风险：付款节点与验收标准偏宽", "高风险：违约责任上限未明确", "写回：合同审批备注 + 当前审批阶段"], "Workflow：员工提交 -> AI 预审 -> 带教/主管审核 -> 总助复核 -> 老板终审 -> 归档", "带教/主管、总助全部通过后，才进入老板终审", "合同审批、审批备注、事项中心"),
+  skill("quote-assistant", "报价助理", "销售 / 报价", "card", "orange", "根据客户、渠道、服务产品和规则生成报价草案；一期只做演示，正式版必须接价格规则。", "销售输入客户目的地、服务产品和预计重量。", ["生成报价草案：待接入价格规则", "提醒：成本、利润底线、有效期需系统校验", "建议审批：销售主管确认后发送", "写回：报价草稿"], "Workflow + 规则引擎：客户/渠道识别 -> 价格规则 -> 毛利校验 -> 主管确认 -> 报价输出", "销售主管确认；价格规则未接入前不得自动发送", "报价系统、客户资料")
+];
+
 let tasks = [
   task("T-1001", "校园招聘项目立项与角色分工", "project", "project", "主管", "processing", "2026-07-08", "项目系统"),
   task("T-1002", "员工试用期转正评估", "probation", "hr", "主管", "pending", "2026-07-05", "人事系统"),
   task("T-1006", "员工月度工作量化低于阈值，请确认是否偏离计划", "work_deviation", "hr", "主管", "pending", "2026-07-06", "AI 工作台"),
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统"),
-  task("T-1004", "合同审批法务风险意见补充", "legal", "legal", "法务助手", "pending", "2026-07-04", "法务系统"),
+  contractTask("T-1004", "客户合同已完成 AI 预审，待带教/主管审核", "主管", "pending", "2026-07-04", "mentor_review", "员工", "AI 已写入低/中/高风险备注，暂不进入老板待办。"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具")
 ];
 
@@ -498,6 +523,19 @@ function profile(name, department, departmentCode, position, manager, tags, curr
 
 function task(id, title, type, source, owner, status, due, sourceName) {
   return { id, title, type, source, owner, status, due, sourceName, initiator: "系统", result: "" };
+}
+
+function contractTask(id, title, owner, status, due, approvalStage, initiator, result) {
+  return {
+    ...task(id, title, "contract", "legal", owner, status, due, "合同审批"),
+    initiator,
+    approvalStage,
+    result
+  };
+}
+
+function skill(id, name, scene, icon, tone, summary, sampleInput, output, workflow, humanGate, writeBack) {
+  return { id, name, scene, icon, tone, summary, sampleInput, output, workflow, humanGate, writeBack };
 }
 
 function escapeHTML(value) {
@@ -619,12 +657,32 @@ function entryIconName(item) {
 
 function visibleTasks(user) {
   if (!user) return [];
-  if (user.role === "boss") return tasks;
-  if (user.role === "assistant") return tasks.filter((item) => ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source));
-  if (user.role === "finance") return tasks.filter((item) => item.source === "finance" || item.type === "expense");
-  if (user.role === "hr") return tasks.filter((item) => ["hr", "recruiting"].includes(item.source) || ["probation", "onboard", "transfer"].includes(item.type));
-  if (user.role === "manager") return tasks.filter((item) => ["project", "hr", "ai_workbench"].includes(item.source));
-  return tasks.filter((item) => ["finance", "ai_workbench"].includes(item.source) || item.initiator === user.name);
+  return tasks.filter((item) => canSeeTask(user, item));
+}
+
+function canSeeTask(user, item) {
+  if (isContractApprovalTask(item)) return canSeeContractTask(user, item);
+  if (user.role === "boss") return true;
+  if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
+  if (user.role === "finance") return item.source === "finance" || item.type === "expense";
+  if (user.role === "hr") return ["hr", "recruiting"].includes(item.source) || ["probation", "onboard", "transfer"].includes(item.type);
+  if (user.role === "manager") return ["project", "hr", "ai_workbench"].includes(item.source);
+  return ["finance", "ai_workbench"].includes(item.source) || item.initiator === user.name;
+}
+
+function isContractApprovalTask(item) {
+  return item.type === "contract" || Boolean(item.approvalStage);
+}
+
+function canSeeContractTask(user, item) {
+  if (item.initiator === user.name || item.initiator === user.username) return true;
+  const stage = item.approvalStage || "mentor_review";
+  if (["submitted", "ai_review"].includes(stage)) return false;
+  if (stage === "mentor_review") return user.role === "manager";
+  if (stage === "assistant_review") return user.role === "assistant";
+  if (stage === "boss_review") return ["boss", "assistant"].includes(user.role);
+  if (stage === "archived") return ["boss", "assistant", "manager"].includes(user.role);
+  return false;
 }
 
 function roleSpecificEntries(user) {
@@ -684,16 +742,44 @@ function previewTile(code, title, text, color) {
   `;
 }
 
-function handleLogin(event) {
-  event.preventDefault();
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value;
-  const account = accounts[username];
-  if (!account || account.password !== password) {
-    state.error = "账号或密码错误。";
-    renderLogin();
-    return;
+function canUseBackend() {
+  return ["http:", "https:"].includes(window.location.protocol);
+}
+
+async function apiRequest(path, options = {}) {
+  if (!canUseBackend()) throw new Error("当前不是后端服务地址");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  if (state.api.token) headers.Authorization = `Bearer ${state.api.token}`;
+  const response = await fetch(path, { ...options, headers });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || `HTTP ${response.status}`);
   }
+  return response.json();
+}
+
+async function loginViaBackend(username, password) {
+  try {
+    const payload = await apiRequest("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password })
+    });
+    state.api.online = true;
+    state.api.token = payload.token;
+    state.api.message = "后端已连接，提交会写入接口流程";
+    return payload.user;
+  } catch (error) {
+    state.api.online = false;
+    state.api.token = "";
+    state.api.message = canUseBackend() ? `后端未连接：${error.message}` : "本地文件打开，后端未连接";
+    return null;
+  }
+}
+
+function finishLogin(account, username) {
   state.user = { ...account, username };
   state.error = "";
   state.view = "home";
@@ -706,9 +792,27 @@ function handleLogin(event) {
     object: account.roleName,
     before: "未登录",
     after: `加载 ${account.roleName} 工作台`,
-    impact: `数据范围：${account.scope}`
+    impact: `数据范围：${account.scope}；${state.api.message}`
   });
   render();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value;
+  const backendUser = await loginViaBackend(username, password);
+  if (backendUser) {
+    finishLogin(backendUser, username);
+    return;
+  }
+  const account = accounts[username];
+  if (!account || account.password !== password) {
+    state.error = "账号或密码错误。";
+    renderLogin();
+    return;
+  }
+  finishLogin(account, username);
 }
 
 function renderWorkbench() {
@@ -741,7 +845,10 @@ function renderWorkbench() {
     </aside>
     <section class="main-area">
       <header class="app-toolbar">
-        <div></div>
+        <div class="backend-pill ${state.api.online ? "online" : "offline"}">
+          <span></span>
+          ${escapeHTML(state.api.online ? "后端已连接" : "静态展示")}
+        </div>
         <div class="toolbar-actions">
           <button class="round-tool has-badge" aria-label="通知">
             ${uiIcon("bell")}
@@ -836,6 +943,19 @@ function homeView() {
         </div>
       </section>
 
+      <section class="digital-skill-panel">
+        <div class="reference-section-head">
+          <div>
+            <h2>数字员工</h2>
+            <p>真实员工不叫助理；只有数字员工以“助理 / 教练”命名，并嵌入具体业务场景。</p>
+          </div>
+          <span class="tag">一期可演示</span>
+        </div>
+        <div class="digital-skill-grid">
+          ${digitalSkills.map(digitalSkillCard).join("")}
+        </div>
+      </section>
+
       <section class="ai-banner">
         <div>
           <h2>统一工作台，连接组织与权限</h2>
@@ -903,6 +1023,23 @@ function recentCard(item) {
   `;
 }
 
+function digitalSkillById(id) {
+  return digitalSkills.find((item) => item.id === id);
+}
+
+function digitalSkillCard(item) {
+  return `
+    <button class="digital-skill-card" data-skill="${escapeHTML(item.id)}">
+      <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
+      <div>
+        <strong>${escapeHTML(item.name)}</strong>
+        <p>${escapeHTML(item.scene)}</p>
+      </div>
+      <em>${uiIcon("arrow-right")}</em>
+    </button>
+  `;
+}
+
 function panelHead(title, note) {
   return `
     <div class="panel-head">
@@ -965,6 +1102,14 @@ function openEntryModal(entryId) {
   render();
 }
 
+function openDigitalSkillModal(skillId) {
+  const item = digitalSkillById(skillId);
+  if (!item) return;
+  state.modal = { type: "skill", skillId };
+  addAudit(`${state.user.name} 打开数字员工「${item.name}」Skill 演示。`);
+  render();
+}
+
 function openDepartmentModal(deptCode) {
   const dept = departmentByCode(deptCode);
   state.selectedDept = dept.code;
@@ -995,6 +1140,7 @@ function renderModal() {
   if (!state.modal) return "";
   if (state.modal.type === "approval") return renderApprovalModal();
   if (state.modal.type === "entry") return renderEntryModal(findEntryById(state.modal.entryId));
+  if (state.modal.type === "skill") return renderDigitalSkillModal(digitalSkillById(state.modal.skillId));
   if (state.modal.type === "department") return renderDepartmentModal(departmentByCode(state.modal.deptCode));
   if (state.modal.type === "profile") return renderProfileModal(employeeProfiles[state.modal.personName]);
   return "";
@@ -1037,6 +1183,7 @@ function renderEntryModal(item) {
   if (!item) return "";
   if (item.taskType === "contract") return renderContractApprovalModal(item);
   const source = systemSources[item.source] || systemSources.ai_workbench;
+  const embeddedSkill = embeddedSkillForEntry(item);
   return modalShell(
     item.name,
     `${source.name} · ${item.scope}`,
@@ -1054,19 +1201,89 @@ function renderEntryModal(item) {
           </div>
         `).join("")}
       </div>
+      ${embeddedSkill ? embeddedSkillStrip(embeddedSkill) : ""}
+      <div class="access-note">${escapeHTML(state.api.online ? "提交后会调用后端接口，写入审批/事项数据。" : "后端未连接：此处只展示表单与字段，不能提交真实流程。")}</div>
     `,
     `
       <button class="ghost-btn" data-modal-close>取消</button>
-      <button class="primary-btn" data-create-entry="${escapeHTML(item.id)}">生成事项卡</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交到后端流程</button>
     `
   );
+}
+
+function renderDigitalSkillModal(item) {
+  if (!item) return "";
+  return modalShell(
+    item.name,
+    `${item.scene} · 数字员工 Skill 演示`,
+    `
+      <div class="skill-demo-layout">
+        <section class="skill-brief">
+          <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
+          <div>
+            <h3>${escapeHTML(item.name)}</h3>
+            <p>${escapeHTML(item.summary)}</p>
+          </div>
+        </section>
+
+        <section class="skill-block">
+          <span>示例输入</span>
+          <strong>${escapeHTML(item.sampleInput)}</strong>
+        </section>
+
+        <section class="skill-block">
+          <span>后端 Skill 输出</span>
+          <div class="skill-output-list">
+            ${item.output.map((line) => `<div>${escapeHTML(line)}</div>`).join("")}
+          </div>
+        </section>
+
+        <section class="skill-workflow">
+          ${permissionFact("技能工作流", item.workflow)}
+          ${permissionFact("人工确认", item.humanGate)}
+          ${permissionFact("写回位置", item.writeBack)}
+          ${permissionFact("接口状态", state.api.online ? "后端已连接，可写入流程" : "后端未连接，当前只展示 Skill 设计")}
+        </section>
+      </div>
+    `,
+    `
+      <button class="ghost-btn" data-modal-close>取消</button>
+      <button class="primary-btn" data-run-skill="${escapeHTML(item.id)}">运行 Skill 流程</button>
+    `
+  );
+}
+
+function embeddedSkillForEntry(item) {
+  const map = {
+    expense: "expense-assistant",
+    field: "travel-field-assistant",
+    travel: "travel-field-assistant",
+    meeting: "meeting-schedule-assistant",
+    schedule: "meeting-schedule-assistant",
+    todo: "weekly-report-assistant",
+    contract: "contract-approval-assistant"
+  };
+  return digitalSkillById(map[item.taskType]);
+}
+
+function embeddedSkillStrip(item) {
+  return `
+    <div class="embedded-skill">
+      <span class="feature-icon ${escapeHTML(item.tone)}">${uiIcon(item.icon)}</span>
+      <div>
+        <strong>${escapeHTML(item.name)}</strong>
+        <p>${escapeHTML(item.summary)}</p>
+      </div>
+      <button class="chip-btn" data-skill="${escapeHTML(item.id)}">查看 Skill</button>
+    </div>
+  `;
 }
 
 function renderContractApprovalModal(item) {
   const source = systemSources[item.source] || systemSources.ai_workbench;
   return modalShell(
     item.name,
-    "上传合同后，AI 先读完整合同并把低/中/高风险写入审批备注，审批链上的每个人都能看到。",
+    "员工提交后先进入 AI 预审；老板不会第一时间看到，只有前置审核全部通过后才进入老板终审。",
     `
       <div class="contract-layout">
         <div class="contract-upload">
@@ -1077,6 +1294,8 @@ function renderContractApprovalModal(item) {
           </div>
           <button class="ghost-btn" type="button">选择文件</button>
         </div>
+
+        ${embeddedSkillStrip(digitalSkillById("contract-approval-assistant"))}
 
         <div class="ai-risk-note">
           <div class="risk-head">
@@ -1090,7 +1309,7 @@ function renderContractApprovalModal(item) {
             </div>
             <div class="risk-item medium">
               <span>中风险</span>
-              <strong>付款节点与验收标准描述偏宽，建议部门负责人确认交付口径。</strong>
+              <strong>付款节点与验收标准描述偏宽，建议带教/主管确认交付口径。</strong>
             </div>
             <div class="risk-item high">
               <span>高风险</span>
@@ -1099,23 +1318,24 @@ function renderContractApprovalModal(item) {
           </div>
           <div class="approval-remark">
             <span>写入备注</span>
-            <strong>以上 AI 风险备注将随合同审批流转，部门负责人、法务、财务、CEO 均可见。</strong>
+            <strong>AI 风险备注随审批链逐步流转；老板仅在带教/主管和总助都审核通过后收到终审待办。</strong>
           </div>
         </div>
 
         <div class="approval-chain">
-          ${["发起人", "部门负责人审批", "法务初审", "财务部门审批", "CEO审批", "抄送"].map((step, index) => `
+          ${contractApprovalStages.map((step, index) => `
             <div class="chain-step">
               <span>${String(index + 1).padStart(2, "0")}</span>
-              <strong>${escapeHTML(step)}</strong>
+              <strong>${escapeHTML(step.label)}</strong>
             </div>
           `).join("")}
         </div>
+        <div class="access-note">后端规则：合同状态为 submitted / ai_review / mentor_review / assistant_review 时，老板待办不可见；只有 boss_review 或 archived 才进入老板视角。</div>
       </div>
     `,
     `
       <button class="ghost-btn" data-modal-close>取消</button>
-      <button class="primary-btn" data-create-entry="${escapeHTML(item.id)}">生成合同审批事项</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交合同审批</button>
     `
   );
 }
@@ -1123,7 +1343,7 @@ function renderContractApprovalModal(item) {
 function entryFields(item) {
   const fields = {
     expense: [["费用类型", "交通/项目/行政费用"], ["关联项目", "校园招聘项目"], ["附件", "发票 OCR 识别后自动命名"], ["审批链", "本人 -> 主管 -> 财务"]],
-    contract: [["合同文件", "上传 PDF / Word / 图片扫描件"], ["AI 读取", "先读完整合同，再生成风险备注"], ["风险备注", "低/中/高风险写入审批备注，审批链每个人可见"], ["审批链", "发起人 -> 部门负责人 -> 法务初审 -> 财务审批 -> CEO审批 -> 抄送"]],
+    contract: [["合同文件", "上传 PDF / Word / 图片扫描件"], ["AI 读取", "先读完整合同，再生成风险备注"], ["风险备注", "低/中/高风险写入审批备注，按阶段可见"], ["审批链", "员工提交 -> AI 预审 -> 带教/主管 -> 总助 -> 老板终审 -> 归档"]],
     leave: [["请假类型", "年假/事假/病假"], ["开始时间", "选择日期时间"], ["结束时间", "选择日期时间"], ["审批链", "本人 -> 直属主管 -> HR 汇总"]],
     field: [["外勤地点", "客户/学校/供应商地址"], ["外勤原因", "拜访、宣讲、交付支持"], ["审批链", "本人 -> 直属主管"]],
     travel: [["出差地点", "城市/客户/项目"], ["预算归属", "项目或部门费用"], ["审批链", "本人 -> 主管 -> 财务"]],
@@ -1409,6 +1629,7 @@ function renderTaskRow(item) {
             <span>${escapeHTML(item.id)}</span>
             <span>${escapeHTML(item.sourceName)}</span>
             <span>负责人：${escapeHTML(item.owner)}</span>
+            ${item.approvalStage ? `<span>阶段：${escapeHTML(contractStageLabel(item.approvalStage))}</span>` : ""}
             <span>截止：${escapeHTML(item.due)}</span>
             ${item.result ? `<span>结论：${escapeHTML(item.result)}</span>` : ""}
           </div>
@@ -1437,6 +1658,11 @@ function statusName(status) {
     need_info: "需补充",
     cancelled: "已取消"
   }[status] || status;
+}
+
+function contractStageLabel(stage) {
+  const matched = contractApprovalStages.find((item) => item.key === stage);
+  return matched ? matched.label : stage;
 }
 
 function permissionRows() {
@@ -1642,10 +1868,22 @@ function bindViewEvents() {
     });
   });
 
-  document.querySelectorAll("[data-create-entry]").forEach((button) => {
+  document.querySelectorAll("[data-submit-entry]").forEach((button) => {
     button.addEventListener("click", () => {
-      const item = findEntryById(button.dataset.createEntry);
-      if (item) createTaskFromEntry(item);
+      const item = findEntryById(button.dataset.submitEntry);
+      if (item) submitEntryWorkflow(item);
+    });
+  });
+
+  document.querySelectorAll("[data-skill]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openDigitalSkillModal(button.dataset.skill);
+    });
+  });
+
+  document.querySelectorAll("[data-run-skill]").forEach((button) => {
+    button.addEventListener("click", () => {
+      runSkillWorkflow(button.dataset.runSkill);
     });
   });
 
@@ -1743,38 +1981,116 @@ function bindPointerGlow() {
   });
 }
 
-function createTaskFromEntry(item) {
+async function createTaskFromEntry(item) {
+  return submitEntryWorkflow(item);
+}
+
+function requireBackend(actionName) {
+  if (state.api.online) return true;
+  addAudit(`${actionName}失败：后端未连接。`, {
+    category: "接口",
+    object: "Backend API",
+    before: "未连接",
+    after: "未提交",
+    impact: "静态页面只展示流程，不能写入真实审批或事项"
+  });
+  alert("后端未连接，不能提交真实流程。请在本地运行 node server.js 后，再从 http://localhost:3000 打开 demo。");
+  return false;
+}
+
+function upsertBackendTask(newTask) {
+  if (!newTask) return;
+  tasks = [newTask, ...tasks.filter((item) => item.id !== newTask.id)];
+}
+
+async function submitEntryWorkflow(item) {
   if (item.id === "approval-center") {
     openApprovalModal();
     return;
   }
+  if (!requireBackend(`提交${item.name}`)) return;
   const source = systemSources[item.source] || systemSources.ai_workbench;
-  const isContract = item.taskType === "contract";
-  const newTask = task(
-    `T-${Math.floor(2000 + Math.random() * 7000)}`,
-    isContract ? `${state.user.name} 发起：合同审批（AI 风险备注已生成）` : `${state.user.name} 发起：${item.name}`,
-    item.taskType,
-    item.source,
-    ownerFor(item.taskType),
-    "pending",
-    "2026-07-08",
-    source.name
-  );
-  newTask.initiator = state.user.name;
-  if (isContract) {
-    newTask.result = "AI 已识别低/中/高风险，风险备注随审批链可见。";
+  try {
+    const payload = item.taskType === "contract"
+      ? await apiRequest("/api/approvals/contracts", {
+          method: "POST",
+          body: JSON.stringify({
+            title: "客户合同审批",
+            fileName: "客户合同_demo.pdf",
+            project: "销售合同",
+            amount: "待识别"
+          })
+        })
+      : await apiRequest("/api/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            entryId: item.id,
+            title: `${state.user.name} 发起：${item.name}`,
+            type: item.taskType,
+            source: item.source,
+            sourceName: source.name
+          })
+        });
+    upsertBackendTask(payload.task);
+    addAudit("提交后端流程", {
+      category: "接口",
+      object: payload.task ? payload.task.id : item.id,
+      before: "前端表单",
+      after: item.taskType === "contract" ? "写入合同审批：ai_review" : "写入事项中心",
+      impact: item.taskType === "contract"
+        ? "老板不可见；AI 预审完成后才流转到带教/主管"
+        : `来源系统：${source.name}`
+    });
+    state.modal = null;
+    state.view = "tasks";
+    render();
+  } catch (error) {
+    state.api.online = false;
+    state.api.message = `后端提交失败：${error.message}`;
+    addAudit("提交后端流程失败", {
+      category: "接口",
+      object: item.id,
+      before: "准备提交",
+      after: error.message,
+      impact: "流程未写入"
+    });
+    alert(`后端提交失败：${error.message}`);
+    render();
   }
-  tasks = [newTask, ...tasks];
-  addAudit("创建事项", {
-    category: "事项变更",
-    object: newTask.id,
-    before: "无",
-    after: `${newTask.title} / ${statusName(newTask.status)}`,
-    impact: `来源系统：${source.name}；负责人：${newTask.owner}`
-  });
-  state.modal = null;
-  state.view = "tasks";
-  render();
+}
+
+async function runSkillWorkflow(skillId) {
+  const item = digitalSkillById(skillId);
+  if (!item || !requireBackend(`运行${item ? item.name : "Skill"}`)) return;
+  try {
+    const payload = await apiRequest(`/api/skills/${encodeURIComponent(skillId)}/run`, {
+      method: "POST",
+      body: JSON.stringify({ input: item.sampleInput })
+    });
+    upsertBackendTask(payload.task);
+    addAudit("运行后端 Skill", {
+      category: "接口",
+      object: item.name,
+      before: "前端示例输入",
+      after: payload.task ? `${payload.task.id} / ${statusName(payload.task.status)}` : "已返回运行结果",
+      impact: skillId === "contract-approval-assistant" ? "合同进入 AI 预审，老板暂不可见" : item.writeBack
+    });
+    state.modal = null;
+    state.view = "tasks";
+    render();
+  } catch (error) {
+    state.api.online = false;
+    state.api.message = `Skill 运行失败：${error.message}`;
+    addAudit("运行后端 Skill 失败", {
+      category: "接口",
+      object: item.name,
+      before: "准备运行",
+      after: error.message,
+      impact: "流程未写入"
+    });
+    alert(`Skill 运行失败：${error.message}`);
+    render();
+  }
 }
 
 function ownerFor(taskType) {
@@ -1782,9 +2098,9 @@ function ownerFor(taskType) {
   if (["org_change", "handover"].includes(taskType)) return "总助";
   if (["onboard", "probation", "transfer", "resign", "hr_file"].includes(taskType)) return "HR";
   if (["project", "todo", "schedule", "leave", "field", "travel", "attendance", "meeting", "approval"].includes(taskType)) return "主管";
-  if (["contract"].includes(taskType)) return "法务助手";
+  if (["contract"].includes(taskType)) return "合同审批助理";
   if (["recruiting"].includes(taskType)) return "HR";
-  if (["legal", "risk"].includes(taskType)) return "法务助手";
+  if (["legal", "risk"].includes(taskType)) return "法务接口人";
   return "主管";
 }
 

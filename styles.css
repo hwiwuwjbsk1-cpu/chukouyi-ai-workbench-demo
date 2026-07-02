@@ -481,6 +481,41 @@ h3 {
   gap: 16px;
 }
 
+.backend-pill {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(18, 81, 141, 0.06);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.backend-pill span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #9ca8b8;
+  box-shadow: 0 0 0 4px rgba(156, 168, 184, 0.12);
+}
+
+.backend-pill.online {
+  color: #0f6f54;
+  border-color: rgba(15, 111, 84, 0.18);
+  background: rgba(243, 252, 248, 0.86);
+}
+
+.backend-pill.online span {
+  background: #17a673;
+  box-shadow: 0 0 0 4px rgba(23, 166, 115, 0.12);
+}
+
 .round-tool {
   position: relative;
   width: 36px;
@@ -2532,7 +2567,13 @@ h3 {
   }
 
   .app-toolbar {
+    flex-wrap: wrap;
+    gap: 10px;
     margin-bottom: 10px;
+  }
+
+  .backend-pill {
+    min-height: 30px;
   }
 
   .toolbar-actions {
