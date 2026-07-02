@@ -15,6 +15,7 @@
 需要演示真实提交链路时运行：
 
 ```bash
+npm install
 node server.js
 ```
 
@@ -48,6 +49,40 @@ http://localhost:3000
 - `POST /api/approvals/contracts`
 - `POST /api/approvals/contracts/:id/advance`
 - `POST /api/skills/:skillId/run`
+
+## 合同模型分析
+
+合同提交不是前端默认写死风险备注。后端会：
+
+```text
+上传 PDF/DOCX/TXT 或粘贴合同文本
+-> 提取合同正文
+-> 调用模型
+-> 返回 highRisks / mediumRisks / lowRisks
+-> 写入合同审批备注
+-> 进入 AI 预审状态
+```
+
+运行前配置模型环境变量。仓库提供 `.env.example`，真实 `.env` 已被 `.gitignore` 忽略，不会提交到 GitHub：
+
+```env
+MODEL_PROVIDER_NAME=美团模型
+MODEL_API_URL=https://api.longcat.chat/openai/v1
+MODEL_API_KEY=你的模型密钥
+MODEL_NAME=LongCat-2.0
+```
+
+接口支持 `multipart/form-data` 文件上传，也支持 JSON：
+
+```json
+{
+  "title": "客户合同审批",
+  "fileName": "contract.txt",
+  "contractText": "合同正文..."
+}
+```
+
+未完整配置模型参数时，后端会返回 `503 模型未配置完整`，不会伪造低/中/高风险结果。
 
 ## Demo 账号
 

@@ -3,9 +3,17 @@ const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
 
+loadLocalEnv();
+
 const port = Number(process.env.PORT || 3000);
 const publicDir = __dirname;
 const sessions = new Map();
+const modelConfig = {
+  providerName: process.env.MODEL_PROVIDER_NAME || "美团模型",
+  apiUrl: normalizeModelApiUrl(process.env.MODEL_API_URL || process.env.OPENAI_API_URL || ""),
+  apiKey: process.env.MODEL_API_KEY || process.env.OPENAI_API_KEY || "",
+  model: process.env.MODEL_NAME || process.env.OPENAI_MODEL || ""
+};
 
 const accounts = {
   employee: account("员工", "employee", "普通员工", "产品及运营部", "product", "CPD 专员", "主管", "本人数据"),
@@ -60,6 +68,32 @@ server.listen(port, () => {
   console.log(`AI workbench demo backend: http://localhost:${port}`);
 });
 
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const index = trimmed.indexOf("=");
+    if (index < 1) continue;
+    const key = trimmed.slice(0, index).trim();
+    let value = trimmed.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
+function normalizeModelApiUrl(value) {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (raw.endsWith("/chat/completions")) return raw;
+  if (raw.endsWith("/v1") || raw.endsWith("/openai/v1")) return `${raw}/chat/completions`;
+  return raw;
+}
+
 async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/health") {
     sendJson(res, 200, { ok: true, message: "backend online" });
@@ -107,8 +141,8 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/approvals/contracts") {
-    const body = await readJson(req);
-    const payload = createContractApproval(user, body);
+    const submission = await readContractSubmission(req);
+    const payload = await createContractApproval(user, submission);
     sendJson(res, 201, payload);
     return;
   }
@@ -133,7 +167,7 @@ async function handleApi(req, res, url) {
   const skillMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/run$/);
   if (req.method === "POST" && skillMatch) {
     const body = await readJson(req);
-    const result = runSkill(user, decodeURIComponent(skillMatch[1]), body);
+    const result = await runSkill(user, decodeURIComponent(skillMatch[1]), body);
     sendJson(res, 201, result);
     return;
   }
@@ -162,23 +196,32 @@ function contractTask(id, title, owner, status, due, approvalStage, initiator, r
   };
 }
 
-function createContractApproval(user, body) {
+async function createContractApproval(user, body) {
+  const contractText = (await extractContractText(body)).trim();
+  if (contractText.length < 20) {
+    throw httpError(400, "请上传可解析的合同文本，或在合同文本框粘贴合同内容。");
+  }
+  const modelResult = await analyzeContractWithModel(contractText, {
+    fileName: body.fileName || "合同文件",
+    project: body.project || "未关联项目",
+    amount: body.amount || "待识别"
+  });
   const contract = {
     id: nextId("C"),
     title: body.title || "客户合同审批",
-    fileName: body.fileName || "合同文件.pdf",
+    fileName: body.fileName || "合同文件.txt",
     project: body.project || "未关联项目",
     amount: body.amount || "待识别",
     initiator: user.name,
     approvalStage: "ai_review",
-    riskNotes: [
-      { level: "低", text: "主体、金额、签署信息完整。" },
-      { level: "中", text: "付款节点与验收标准偏宽，需带教/主管确认交付口径。" },
-      { level: "高", text: "违约责任上限未明确，进入人工审核前需补充责任边界。" }
-    ],
+    modelProvider: modelResult.provider,
+    modelName: modelResult.model,
+    riskNotes: modelResult.riskNotes,
+    approvalRemark: modelResult.approvalRemark,
+    extractedTextLength: contractText.length,
     audit: [
       `${user.name} 提交合同`,
-      "合同审批助理进入 AI 预审"
+      `合同审批助理调用${modelResult.provider}完成风险分析`
     ]
   };
   const newTask = {
@@ -190,13 +233,142 @@ function createContractApproval(user, body) {
       "2026-07-08",
       "ai_review",
       user.name,
-      "合同已提交后端，当前仅发起人可见；老板暂不可见。"
+      `${modelResult.provider}已输出低/中/高风险，当前仅发起人可见；老板暂不可见。`
     ),
     contractId: contract.id
   };
   contracts.unshift(contract);
   tasks.unshift(newTask);
-  return { contract, task: newTask, message: "合同已进入 AI 预审，老板暂不可见" };
+  return { contract, task: newTask, analysis: modelResult, message: "合同已进入 AI 预审，老板暂不可见" };
+}
+
+async function extractContractText(body) {
+  if (body.contractText && String(body.contractText).trim().length >= 20) {
+    return String(body.contractText);
+  }
+  if (!body.fileBuffer) return "";
+
+  const fileName = String(body.fileName || "").toLowerCase();
+  if (fileName.endsWith(".pdf")) {
+    const pdfParse = requireOptional("pdf-parse", "PDF 解析依赖未安装，请先执行 npm install。");
+    const result = await pdfParse(body.fileBuffer);
+    return result.text || "";
+  }
+  if (fileName.endsWith(".docx")) {
+    const mammoth = requireOptional("mammoth", "DOCX 解析依赖未安装，请先执行 npm install。");
+    const result = await mammoth.extractRawText({ buffer: body.fileBuffer });
+    return result.value || "";
+  }
+  if (fileName.endsWith(".doc")) {
+    throw httpError(400, "暂不支持旧版 .doc，请转为 .docx、PDF 或粘贴合同文本。");
+  }
+  return body.fileBuffer.toString("utf8");
+}
+
+function requireOptional(packageName, message) {
+  try {
+    return require(packageName);
+  } catch {
+    throw httpError(500, message);
+  }
+}
+
+async function analyzeContractWithModel(contractText, meta) {
+  if (!modelConfig.apiKey || !modelConfig.apiUrl || !modelConfig.model) {
+    throw httpError(503, "模型未配置完整：请设置 MODEL_API_KEY / MODEL_API_URL / MODEL_NAME 后再提交合同。");
+  }
+
+  const systemPrompt = [
+    "你是企业合同审批的风险分析模型，只输出 JSON。",
+    "你需要把合同风险分为 highRisks、mediumRisks、lowRisks 三类。",
+    "每条风险必须包含 title、clause、reason、suggestion 四个字段。",
+    "请站在企业内部审批角度给出可写入审批备注的结论，不能编造合同中不存在的条款。",
+    "如果某类风险没有发现，返回空数组。",
+    "不要输出 Markdown，不要输出 JSON 之外的文字。"
+  ].join("\n");
+  const userPrompt = [
+    `文件名：${meta.fileName}`,
+    `项目：${meta.project}`,
+    `金额：${meta.amount}`,
+    "",
+    "请分析以下合同文本：",
+    contractText.slice(0, 24000)
+  ].join("\n");
+
+  const response = await fetch(modelConfig.apiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${modelConfig.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: modelConfig.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.2
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw httpError(response.status, payload.error?.message || payload.message || "模型调用失败");
+  }
+
+  const content = payload.choices?.[0]?.message?.content || payload.content;
+  if (!content) throw httpError(502, "模型未返回可解析内容");
+
+  let parsed;
+  try {
+    parsed = JSON.parse(extractJsonObject(content));
+  } catch {
+    throw httpError(502, "模型返回不是合法 JSON");
+  }
+
+  const highRisks = normalizeRiskItems(parsed.highRisks);
+  const mediumRisks = normalizeRiskItems(parsed.mediumRisks);
+  const lowRisks = normalizeRiskItems(parsed.lowRisks);
+  return {
+    provider: modelConfig.providerName,
+    model: modelConfig.model,
+    highRisks,
+    mediumRisks,
+    lowRisks,
+    riskNotes: [
+      ...highRisks.map((item) => ({ level: "高", text: `${item.title}：${item.reason} 建议：${item.suggestion}` })),
+      ...mediumRisks.map((item) => ({ level: "中", text: `${item.title}：${item.reason} 建议：${item.suggestion}` })),
+      ...lowRisks.map((item) => ({ level: "低", text: `${item.title}：${item.reason} 建议：${item.suggestion}` }))
+    ],
+    approvalRemark: buildApprovalRemark(highRisks, mediumRisks, lowRisks)
+  };
+}
+
+function normalizeRiskItems(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 8).map((item) => ({
+    title: String(item.title || "风险项").slice(0, 80),
+    clause: String(item.clause || "未标明条款").slice(0, 160),
+    reason: String(item.reason || "模型未说明原因").slice(0, 220),
+    suggestion: String(item.suggestion || "请人工复核").slice(0, 220)
+  }));
+}
+
+function extractJsonObject(content) {
+  const text = String(content || "").trim();
+  if (text.startsWith("{") && text.endsWith("}")) return text;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) return fenced[1].trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  return text;
+}
+
+function buildApprovalRemark(highRisks, mediumRisks, lowRisks) {
+  const total = highRisks.length + mediumRisks.length + lowRisks.length;
+  if (!total) return "模型未识别到明确风险项，仍需按合同审批链人工复核。";
+  return `模型识别高风险 ${highRisks.length} 项、中风险 ${mediumRisks.length} 项、低风险 ${lowRisks.length} 项；审批链需依次经过带教/主管、法务、总助，前置审核通过后才进入老板终审。`;
 }
 
 function advanceContract(user, contractId) {
@@ -233,14 +405,14 @@ function advanceContract(user, contractId) {
   return { contract, task: relatedTask };
 }
 
-function runSkill(user, skillId, body) {
+async function runSkill(user, skillId, body) {
   if (skillId === "contract-approval-assistant") {
-    return createContractApproval(user, {
+    return await createContractApproval(user, {
       title: "合同审批助理提交的客户合同",
-      fileName: "skill_contract_demo.pdf",
+      fileName: "skill_contract_demo.txt",
       project: "销售合同",
       amount: "AI 待识别",
-      input: body.input
+      contractText: body.contractText || body.input || ""
     });
   }
 
@@ -310,24 +482,87 @@ function requireUser(req) {
   return publicAccount(accounts[username], username);
 }
 
+async function readContractSubmission(req) {
+  const contentType = req.headers["content-type"] || "";
+  if (contentType.includes("multipart/form-data")) {
+    return readMultipartContract(req, contentType);
+  }
+  if (contentType.includes("text/plain")) {
+    const buffer = await readRawBody(req, 5 * 1024 * 1024);
+    return { title: "客户合同审批", fileName: "contract.txt", contractText: buffer.toString("utf8") };
+  }
+  return readJson(req);
+}
+
+async function readMultipartContract(req, contentType) {
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!boundaryMatch) throw httpError(400, "上传格式错误：缺少 multipart boundary");
+  const boundary = boundaryMatch[1] || boundaryMatch[2];
+  const raw = await readRawBody(req, 8 * 1024 * 1024);
+  const parts = raw.toString("binary").split(`--${boundary}`);
+  const fields = {};
+  let uploadedFile = null;
+
+  for (const part of parts) {
+    const trimmed = part.replace(/^\r\n/, "");
+    if (!trimmed || trimmed === "--\r\n" || trimmed === "--") continue;
+    const [rawHeaders, ...bodyParts] = trimmed.split("\r\n\r\n");
+    if (!rawHeaders || !bodyParts.length) continue;
+    const bodyBinary = bodyParts.join("\r\n\r\n").replace(/\r\n--$/, "").replace(/\r\n$/, "");
+    const disposition = rawHeaders.match(/content-disposition:\s*form-data;\s*([^\r\n]+)/i);
+    if (!disposition) continue;
+    const name = (disposition[1].match(/name="([^"]+)"/) || [])[1];
+    const fileName = (disposition[1].match(/filename="([^"]*)"/) || [])[1];
+    if (!name) continue;
+    const contentBuffer = Buffer.from(bodyBinary, "binary");
+    if (fileName) {
+      uploadedFile = { fileName, contentBuffer };
+    } else {
+      fields[name] = contentBuffer.toString("utf8").trim();
+    }
+  }
+
+  const contractText = fields.contractText || "";
+  const fileName = fields.fileName || uploadedFile?.fileName || "contract.txt";
+  return {
+    title: fields.title || "客户合同审批",
+    project: fields.project || "未关联项目",
+    amount: fields.amount || "待识别",
+    fileName,
+    contractText,
+    fileBuffer: uploadedFile?.contentBuffer
+  };
+}
+
 function readJson(req) {
+  return readRawBody(req, 5 * 1024 * 1024).then((bodyBuffer) => {
+    const body = bodyBuffer.toString("utf8");
+    if (!body) return {};
+    try {
+      return JSON.parse(body);
+    } catch {
+      throw httpError(400, "JSON 格式错误");
+    }
+  });
+}
+
+function readRawBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
-    let body = "";
+    const chunks = [];
+    let size = 0;
     req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 1024 * 1024) {
+      size += chunk.length;
+      if (size > maxBytes) {
         reject(httpError(413, "请求体过大"));
         req.destroy();
+        return;
       }
+      chunks.push(chunk);
     });
     req.on("end", () => {
-      if (!body) return resolve({});
-      try {
-        resolve(JSON.parse(body));
-      } catch {
-        reject(httpError(400, "JSON 格式错误"));
-      }
+      resolve(Buffer.concat(chunks));
     });
+    req.on("error", reject);
   });
 }
 

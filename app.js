@@ -769,10 +769,11 @@ function canUseBackend() {
 
 async function apiRequest(path, options = {}) {
   if (!canUseBackend()) throw new Error("当前不是后端服务地址");
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers = {
-    "Content-Type": "application/json",
     ...(options.headers || {})
   };
+  if (!isFormData) headers["Content-Type"] = "application/json";
   if (state.api.token) headers.Authorization = `Bearer ${state.api.token}`;
   const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
@@ -1311,35 +1312,42 @@ function renderContractApprovalModal(item) {
           <span class="module-icon">${uiIcon("contract")}</span>
           <div>
             <div class="task-title">上传合同文件</div>
-            <p class="panel-note">支持 PDF、Word、图片扫描件。正式版上传后调用合同解析与风险识别接口。</p>
+            <p class="panel-note">后端接收 PDF / DOCX / TXT，先提取合同文本，再调用模型输出风险分级。</p>
           </div>
-          <button class="ghost-btn" type="button">选择文件</button>
+          <input class="hidden-file" id="contractFile" type="file" accept=".pdf,.docx,.txt,.md" />
+          <button class="ghost-btn" type="button" data-contract-file-pick>选择文件</button>
         </div>
+        <div class="contract-file-name" id="contractFileName">未选择文件，也可以直接粘贴合同文本。</div>
+
+        <label class="contract-text-input">
+          <span>合同文本 / 模型分析输入</span>
+          <textarea id="contractText" placeholder="将合同正文粘贴到这里；或上传 PDF / DOCX / TXT 后直接提交给后端模型分析。"></textarea>
+        </label>
 
         ${embeddedSkillStrip(digitalSkillById("contract-approval-assistant"))}
 
         <div class="ai-risk-note">
           <div class="risk-head">
-            <span class="tag">AI 风险备注</span>
-            <strong>已读完整合同，生成审批备注</strong>
+            <span class="tag">模型分析输出</span>
+            <strong>提交后由后端调用模型生成低 / 中 / 高风险</strong>
           </div>
           <div class="risk-list">
             <div class="risk-item low">
               <span>低风险</span>
-              <strong>合同主体、签署信息、基础金额字段完整。</strong>
+              <strong>等待模型读取合同后返回，不在前端默认写死。</strong>
             </div>
             <div class="risk-item medium">
               <span>中风险</span>
-              <strong>付款节点与验收标准描述偏宽，建议带教/主管确认交付口径。</strong>
+              <strong>等待模型读取合同后返回，不在前端默认写死。</strong>
             </div>
             <div class="risk-item high">
               <span>高风险</span>
-              <strong>违约责任上限未明确，建议法务初审前补充责任边界。</strong>
+              <strong>等待模型读取合同后返回，不在前端默认写死。</strong>
             </div>
           </div>
           <div class="approval-remark">
             <span>写入备注</span>
-            <strong>AI 风险备注随审批链逐步流转；总助只能在法务审核通过后收到复核待办，老板仅在总助复核通过后收到终审待办。</strong>
+            <strong>模型返回的风险 JSON 会写入审批备注，并随审批链逐步流转；法务审核通过后才到总助。</strong>
           </div>
         </div>
 
@@ -1911,6 +1919,21 @@ function bindViewEvents() {
     });
   });
 
+  document.querySelectorAll("[data-contract-file-pick]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById("contractFile")?.click();
+    });
+  });
+
+  const contractFile = document.getElementById("contractFile");
+  if (contractFile) {
+    contractFile.addEventListener("change", () => {
+      const fileName = contractFile.files?.[0]?.name || "未选择文件，也可以直接粘贴合同文本。";
+      const label = document.getElementById("contractFileName");
+      if (label) label.textContent = fileName;
+    });
+  }
+
   document.querySelectorAll("[data-modal-close]").forEach((button) => {
     button.addEventListener("click", closeModal);
   });
@@ -2036,15 +2059,7 @@ async function submitEntryWorkflow(item) {
   const source = systemSources[item.source] || systemSources.ai_workbench;
   try {
     const payload = item.taskType === "contract"
-      ? await apiRequest("/api/approvals/contracts", {
-          method: "POST",
-          body: JSON.stringify({
-            title: "客户合同审批",
-            fileName: "客户合同_demo.pdf",
-            project: "销售合同",
-            amount: "待识别"
-          })
-        })
+      ? await submitContractApproval()
       : await apiRequest("/api/tasks", {
           method: "POST",
           body: JSON.stringify({
@@ -2069,7 +2084,7 @@ async function submitEntryWorkflow(item) {
     state.view = "tasks";
     render();
   } catch (error) {
-    state.api.online = false;
+    if (error.message.includes("Failed to fetch")) state.api.online = false;
     state.api.message = `后端提交失败：${error.message}`;
     addAudit("提交后端流程失败", {
       category: "接口",
@@ -2081,6 +2096,25 @@ async function submitEntryWorkflow(item) {
     alert(`后端提交失败：${error.message}`);
     render();
   }
+}
+
+async function submitContractApproval() {
+  const contractText = document.getElementById("contractText")?.value.trim() || "";
+  const fileInput = document.getElementById("contractFile");
+  const file = fileInput?.files?.[0];
+  if (!contractText && !file) {
+    throw new Error("请先上传合同文件，或粘贴合同文本后再提交。");
+  }
+  const formData = new FormData();
+  formData.append("title", "客户合同审批");
+  formData.append("project", "销售合同");
+  formData.append("amount", "待识别");
+  if (contractText) formData.append("contractText", contractText);
+  if (file) formData.append("contractFile", file, file.name);
+  return apiRequest("/api/approvals/contracts", {
+    method: "POST",
+    body: formData
+  });
 }
 
 async function runSkillWorkflow(skillId) {
@@ -2103,7 +2137,7 @@ async function runSkillWorkflow(skillId) {
     state.view = "tasks";
     render();
   } catch (error) {
-    state.api.online = false;
+    if (error.message.includes("Failed to fetch")) state.api.online = false;
     state.api.message = `Skill 运行失败：${error.message}`;
     addAudit("运行后端 Skill 失败", {
       category: "接口",
