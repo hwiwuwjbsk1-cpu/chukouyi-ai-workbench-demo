@@ -1366,6 +1366,7 @@ function homeQuickItems(user) {
       quickFromEntry("performance-result", "violet"),
       quickFromEntry("risk-overview", "orange"),
       quickFromEntry("recruiting-system", "blue"),
+      base.meeting,
       quickFromEntry("org-manage", "mint"),
       base.tasks
     ]
@@ -1405,7 +1406,7 @@ function recentItemsForUser(user) {
     finance: ["expense-review", "invoice", "payment", "cost-class"],
     legal: ["legal-risk", "contract-archive", "contract-template", "continuous-risk"],
     assistant: ["robot-orchestration", "org-manage", "permission-handover", "boss-follow"],
-    boss: ["robot-orchestration", "org-health", "key-projects", "risk-overview"]
+    boss: ["meeting-room", "robot-orchestration", "org-health", "key-projects", "risk-overview"]
   };
   return (idsByRole[user.role] || ["approval-center", "todo", "meeting-room"])
     .map(findEntryById)
