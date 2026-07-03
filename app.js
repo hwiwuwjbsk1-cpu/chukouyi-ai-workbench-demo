@@ -14,6 +14,8 @@ const state = {
     token: "",
     message: "后端未连接，静态展示模式"
   },
+  automationRules: [],
+  automationEvents: [],
   audit: [
     {
       time: "2026-07-01 09:00",
@@ -67,6 +69,13 @@ const contractProjectStages = [
   { key: "feedback", label: "部门反馈沉淀" },
   { key: "approval", label: "自动发起审批" },
   { key: "lifecycle", label: "归档与履约监控" }
+];
+
+const fallbackAutomationRules = [
+  automationRule("invoice.uploaded", "上传发票", "报销助理", ["发票识别与命名", "报销规则校验", "项目费用归类"], "报销基础表单 / 事项中心", "POST /api/expenses/invoices/autofill"),
+  automationRule("contract.uploaded", "上传合同/邮件材料", "合同审批助理", ["合同材料读取", "合同风险分析", "合同项目组创建", "审批链路路由", "履约风险监控"], "合同协作项目 / 审批中心 / 履约监控", "POST /api/contracts/projects"),
+  automationRule("meeting.created", "创建会议/预订会议室", "日程和会议助理", ["日程会议协调", "会议纪要提取", "访客接待引导"], "会议室预订 / 日程 / 会后事项", "POST /api/meetings"),
+  automationRule("daily_report.submitted", "提交日报", "日报周报助理", ["日报周报汇总", "工作量化评分", "会议纪要提取"], "日报量化 / 主管提醒 / 事项中心", "POST /api/reports/daily")
 ];
 
 const managerAccount = {
@@ -459,6 +468,7 @@ const commonEntries = [
   entry("meeting-room", "会议室", "企微应用", "wecom", "HY", "meeting", "会议室预订与占用"),
   entry("permission", "权限申请", "AI 工作台", "ai_workbench", "QX", "permission", "本人申请；主管处理"),
   entry("schedule", "日程", "企微日程", "wecom", "RC", "schedule", "会议/宣讲/面谈安排"),
+  entry("daily-report", "日报周报", "AI 工作台", "ai_workbench", "RB", "daily_report", "本人提交；主管看团队异常"),
   entry("my-approval", "我的审批", "企微审批", "wecom", "SP", "approval", "当前用户待审批"),
   entry("todo", "我的待办", "AI 工作台", "ai_workbench", "DB", "todo", "当前用户相关事项")
 ];
@@ -582,6 +592,17 @@ function skill(name, purpose, input, output, writesTo) {
 
 function robot(id, name, domain, skills, entries, outcome, roles) {
   return { id, name, domain, skills, entries, outcome, roles };
+}
+
+function automationRule(eventType, businessAction, robotName, skills, outputTarget, endpoint) {
+  return {
+    eventType,
+    businessAction,
+    robotName,
+    skills: skills.map((name) => ({ name })),
+    outputTarget,
+    endpoint
+  };
 }
 
 function profile(name, department, departmentCode, position, manager, tags, currentWork, summary, handover, score, monthly, risk) {
@@ -725,6 +746,7 @@ function entryIconName(item) {
     "meeting-room": "meeting",
     permission: "key",
     schedule: "clock",
+    "daily-report": "todo",
     "my-approval": "inbox",
     todo: "todo",
     onboard: "people",
@@ -762,6 +784,7 @@ function entryIconName(item) {
     project: "project",
     permission: "key",
     schedule: "clock",
+    daily_report: "todo",
     meeting: "meeting",
     todo: "todo",
     payment: "card",
@@ -855,6 +878,7 @@ function canInitiateTaskType(user, taskType) {
     meeting: "all",
     schedule: "all",
     todo: "all",
+    daily_report: "staff",
     permission: ["employee", "manager", "hr", "finance", "legal"],
     contract: ["employee", "manager"],
     contract_project: ["employee", "manager"],
@@ -1040,6 +1064,21 @@ async function loginViaBackend(username, password) {
   }
 }
 
+async function syncAutomationGovernance() {
+  if (!state.api.online || !["boss", "assistant"].includes(state.user?.role)) return;
+  try {
+    const [rulesPayload, eventsPayload] = await Promise.all([
+      apiRequest("/api/automation/rules"),
+      apiRequest("/api/automation/events")
+    ]);
+    state.automationRules = rulesPayload.rules || [];
+    state.automationEvents = eventsPayload.events || [];
+    render();
+  } catch (error) {
+    state.automationRules = [];
+  }
+}
+
 function finishLogin(account, username) {
   state.user = { ...account, username };
   state.error = "";
@@ -1056,6 +1095,7 @@ function finishLogin(account, username) {
     impact: `数据范围：${account.scope}；${state.api.message}`
   });
   render();
+  syncAutomationGovernance();
 }
 
 async function handleLogin(event) {
@@ -1246,7 +1286,8 @@ function homeQuickItems(user) {
     org: { kind: "view", id: "org", title: "组织架构", text: "父子层级、人员画像与权限联动", icon: "org", tone: "violet" },
     meeting: { kind: "entry", id: "meeting-room", title: "会议室", text: "会议室预订、占用与行政协同", icon: "meeting", tone: "orange" },
     permission: { kind: "entry", id: "permission", title: "权限申请", text: "岗位或项目变化时申请权限", icon: "key", tone: "blue" },
-    schedule: { kind: "entry", id: "schedule", title: "日程", text: "会议、面谈、宣讲统一安排", icon: "clock", tone: "blue" }
+    schedule: { kind: "entry", id: "schedule", title: "日程", text: "会议、面谈、宣讲统一安排", icon: "clock", tone: "blue" },
+    daily: { kind: "entry", id: "daily-report", title: "日报周报", text: "提交日报后自动量化工作量", icon: "todo", tone: "mint" }
   };
   const byRole = {
     employee: [
@@ -1255,6 +1296,7 @@ function homeQuickItems(user) {
       quickFromEntry("contract-approval", "violet"),
       base.permission,
       base.schedule,
+      base.daily,
       base.org,
       quickFromEntry("my-projects", "orange"),
       base.meeting
@@ -1266,6 +1308,7 @@ function homeQuickItems(user) {
       quickFromEntry("project-progress", "mint"),
       quickFromEntry("handover", "blue"),
       quickFromEntry("contract-approval", "violet"),
+      base.daily,
       base.approvals,
       base.org
     ],
@@ -1520,6 +1563,8 @@ function renderApprovalModal() {
 function renderEntryModal(item) {
   if (!item) return "";
   if (item.taskType === "expense") return renderExpenseModal(item);
+  if (item.taskType === "meeting") return renderMeetingModal(item);
+  if (item.taskType === "daily_report") return renderDailyReportModal(item);
   if (item.taskType === "contract_project") return renderContractProjectModal(item);
   if (item.taskType === "contract") return renderContractApprovalModal(item);
   const source = systemSources[item.source] || systemSources.ai_workbench;
@@ -1592,6 +1637,74 @@ function expenseField(id, label, value) {
     <label class="fake-field expense-field">
       <span>${escapeHTML(label)}</span>
       <input id="${escapeHTML(id)}" value="${escapeHTML(value)}" />
+    </label>
+  `;
+}
+
+function renderMeetingModal(item) {
+  return modalShell(
+    item.name,
+    "创建会议后，后端会触发日程和会议助理，自动处理会议室、参会人日程和会后事项。",
+    `
+      <div class="contract-layout">
+        <div class="fake-form expense-form">
+          ${workflowInput("meetingTitle", "会议主题", "合同协作项目反馈会")}
+          ${workflowInput("meetingTime", "会议时间", `${todayInputDate()} 16:00`)}
+          ${workflowInput("meetingRoom", "会议室", "广州总部 A 会议室")}
+          ${workflowInput("meetingParticipants", "参会人", "产品、财务、法务、业务发起人")}
+        </div>
+        ${workflowTextarea("meetingPurpose", "会议目的", "确认合同项目中的产品、财务、法务反馈，沉淀会后待办。")}
+        <div class="contract-process-note">
+          <strong>后端事件</strong>
+          <span>创建会议 -> 日程和会议助理 -> 自动协调会议室、纪要和会后事项。</span>
+        </div>
+      </div>
+    `,
+    `
+      <button class="ghost-btn" data-modal-close>取消</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">创建会议</button>
+    `
+  );
+}
+
+function renderDailyReportModal(item) {
+  return modalShell(
+    item.name,
+    "提交日报后，后端会触发日报周报助理，自动汇总工作量并在低于阈值时提醒主管。",
+    `
+      <div class="contract-layout">
+        <div class="fake-form expense-form">
+          ${workflowInput("dailyDate", "日期", todayInputDate())}
+          ${workflowInput("dailyPlan", "明日计划", "继续推进合同协作项目和报销自动回填闭环")}
+        </div>
+        ${workflowTextarea("dailyText", "日报内容", "完成发票上传自动识别链路；推进合同协作项目事件机制；整理会议待办和后续 PRD 事项。")}
+        <div class="contract-process-note">
+          <strong>后端事件</strong>
+          <span>提交日报 -> 日报周报助理 -> 自动汇总、量化评分，低于阈值提醒主管。</span>
+        </div>
+      </div>
+    `,
+    `
+      <button class="ghost-btn" data-modal-close>取消</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交日报</button>
+    `
+  );
+}
+
+function workflowInput(id, label, value) {
+  return `
+    <label class="fake-field expense-field">
+      <span>${escapeHTML(label)}</span>
+      <input id="${escapeHTML(id)}" value="${escapeHTML(value)}" />
+    </label>
+  `;
+}
+
+function workflowTextarea(id, label, value) {
+  return `
+    <label class="contract-text-input">
+      <span>${escapeHTML(label)}</span>
+      <textarea id="${escapeHTML(id)}">${escapeHTML(value)}</textarea>
     </label>
   `;
 }
@@ -1936,6 +2049,7 @@ function renderTaskRow(item) {
             <span>${escapeHTML(item.id)}</span>
             <span>${escapeHTML(item.sourceName)}</span>
             <span>负责人：${escapeHTML(item.owner)}</span>
+            ${item.automationSummary ? `<span>自动化：${escapeHTML(item.automationSummary)}</span>` : ""}
             ${item.approvalStage ? `<span>阶段：${escapeHTML(contractStageLabel(item.approvalStage))}</span>` : ""}
             ${item.projectStage ? `<span>项目阶段：${escapeHTML(contractProjectStageLabel(item.projectStage))}</span>` : ""}
             <span>截止：${escapeHTML(item.due)}</span>
@@ -2178,23 +2292,78 @@ function robotsView() {
   }
   const visibleRobots = robotCatalog;
   const allSkillIds = Array.from(new Set(visibleRobots.flatMap((item) => item.skills)));
+  const rules = state.automationRules.length ? state.automationRules : fallbackAutomationRules;
   return `
     <div class="left-column">
       <section class="panel">
-        ${panelHead("机器人编排", "机器人是业务对象，技能是后台能力；普通员工只看到业务入口，老板/总助看编排和治理。")}
+        ${panelHead("机器人编排", "业务动作进入后端后，由事件规则自动触发机器人和 Skills；普通员工只看到业务入口和结果。")}
         <div class="metrics-row">
           ${metric("机器人", String(visibleRobots.length), "按角色可见")}
           ${metric("技能", String(allSkillIds.length), "可复用能力")}
-          ${metric("入口", String(new Set(visibleRobots.flatMap((item) => item.entries)).size), "关联业务场景")}
-          ${metric("治理", "按角色", "可见/调用/写入分离")}
+          ${metric("后端事件", String(rules.length), "业务动作触发")}
+          ${metric("最近触发", String(state.automationEvents.length), "接口返回记录")}
         </div>
       </section>
+      <section class="panel">
+        ${panelHead("后端触发规则", "前端不传机器人指令，只提交业务动作；后端按事件类型决定触发哪个机器人和哪些 Skills。")}
+        <div class="event-rule-grid">
+          ${rules.map(renderAutomationRule).join("")}
+        </div>
+      </section>
+      ${state.automationEvents.length ? `
+        <section class="panel">
+          ${panelHead("最近后端事件", "这些记录来自业务接口返回或后端事件日志。")}
+          <div class="task-list">
+            ${state.automationEvents.map(renderAutomationEvent).join("")}
+          </div>
+        </section>
+      ` : ""}
       <section class="panel">
         ${panelHead("机器人清单", "每个机器人由多个技能组成，技能负责输入、处理、输出和写回。")}
         <div class="task-list">
           ${visibleRobots.map(renderRobotRow).join("")}
         </div>
       </section>
+    </div>
+  `;
+}
+
+function renderAutomationRule(rule) {
+  const skills = (rule.skills || []).map((item) => item.name || item).join(" -> ");
+  return `
+    <section class="event-rule-card">
+      <div class="event-rule-head">
+        <span>${escapeHTML(rule.eventType)}</span>
+        <strong>${escapeHTML(rule.businessAction)}</strong>
+      </div>
+      ${permissionFact("触发机器人", rule.robotName)}
+      ${permissionFact("Skills", skills)}
+      ${permissionFact("写回对象", rule.outputTarget)}
+      ${rule.endpoint ? permissionFact("后端接口", rule.endpoint) : ""}
+    </section>
+  `;
+}
+
+function renderAutomationEvent(eventItem) {
+  const skills = (eventItem.skills || []).map((item) => item.name || item).join(" -> ");
+  return `
+    <div class="task-row event-row">
+      <div class="task-main">
+        <div>
+          <div class="task-title">${escapeHTML(eventItem.businessAction)} · ${escapeHTML(eventItem.robotName)}</div>
+          <div class="task-meta">
+            <span>${escapeHTML(eventItem.id)}</span>
+            <span>${escapeHTML(eventItem.eventType)}</span>
+            <span>触发人：${escapeHTML(eventItem.actor)}</span>
+            <span>${escapeHTML(eventItem.createdAt)}</span>
+          </div>
+        </div>
+        <span class="status processing">已触发</span>
+      </div>
+      <div class="permission-stack">
+        ${permissionFact("技能链", skills)}
+        ${permissionFact("输出对象", (eventItem.outputs || []).join(" / ") || eventItem.outputTarget)}
+      </div>
     </div>
   `;
 }
@@ -2533,6 +2702,11 @@ function upsertBackendTask(newTask, analysis) {
   tasks = [newTask, ...tasks.filter((item) => item.id !== newTask.id)];
 }
 
+function recordAutomationEvent(eventItem) {
+  if (!eventItem) return;
+  state.automationEvents = [eventItem, ...state.automationEvents.filter((item) => item.id !== eventItem.id)].slice(0, 20);
+}
+
 async function submitEntryWorkflow(item) {
   if (item.id === "approval-center") {
     openApprovalModal();
@@ -2554,6 +2728,10 @@ async function submitEntryWorkflow(item) {
       payload = await submitContractProject();
     } else if (item.taskType === "contract") {
       payload = await submitContractApproval();
+    } else if (item.taskType === "meeting") {
+      payload = await submitMeeting();
+    } else if (item.taskType === "daily_report") {
+      payload = await submitDailyReport();
     } else {
       payload = await apiRequest("/api/tasks", {
         method: "POST",
@@ -2567,15 +2745,19 @@ async function submitEntryWorkflow(item) {
       });
     }
     upsertBackendTask(payload.task, payload.analysis);
+    if (payload.reminderTask) upsertBackendTask(payload.reminderTask);
+    recordAutomationEvent(payload.automationEvent);
     addAudit("提交后端流程", {
       category: "接口",
       object: payload.task ? payload.task.id : item.id,
       before: "前端表单",
-      after: item.taskType === "contract_project" ? "创建合同协作项目" : (item.taskType === "contract" ? "写入合同审批：ai_review" : "写入事项中心"),
+      after: item.taskType === "contract_project" ? "创建合同协作项目" : (item.taskType === "contract" ? "写入合同审批：ai_review" : (payload.automationEvent ? `触发后端事件：${payload.automationEvent.eventType}` : "写入事项中心")),
       impact: item.taskType === "contract_project"
         ? "自动创建项目组、风险备注、部门反馈和后续正式审批入口"
         : item.taskType === "contract"
         ? "老板不可见；AI 预审完成后才流转到带教/主管"
+        : payload.automationEvent
+        ? `${payload.automationEvent.robotName} 自动执行 ${payload.automationEvent.skills.length} 个 Skills`
         : `来源系统：${source.name}`
     });
     state.modal = null;
@@ -2615,6 +2797,30 @@ async function submitContractApproval() {
   });
 }
 
+async function submitMeeting() {
+  return apiRequest("/api/meetings", {
+    method: "POST",
+    body: JSON.stringify({
+      title: document.getElementById("meetingTitle")?.value.trim() || "内部会议",
+      meetingTime: document.getElementById("meetingTime")?.value.trim() || "待确认",
+      room: document.getElementById("meetingRoom")?.value.trim() || "默认会议室",
+      participants: document.getElementById("meetingParticipants")?.value.trim() || "相关同事",
+      purpose: document.getElementById("meetingPurpose")?.value.trim() || "会议事项"
+    })
+  });
+}
+
+async function submitDailyReport() {
+  return apiRequest("/api/reports/daily", {
+    method: "POST",
+    body: JSON.stringify({
+      reportDate: document.getElementById("dailyDate")?.value.trim() || todayInputDate(),
+      reportText: document.getElementById("dailyText")?.value.trim() || "",
+      plan: document.getElementById("dailyPlan")?.value.trim() || "明日计划待补充"
+    })
+  });
+}
+
 async function autofillExpenseFromInvoice() {
   const fileInput = document.getElementById("expenseFile");
   const file = fileInput?.files?.[0];
@@ -2637,6 +2843,7 @@ async function autofillExpenseFromInvoice() {
     fillExpenseField("expenseProject", payload.fields.project);
     fillExpenseField("expenseAttachment", payload.fields.attachmentName);
     upsertBackendTask(payload.task);
+    recordAutomationEvent(payload.automationEvent);
     if (status) {
       const percent = Math.round((payload.confidence || 0) * 100);
       status.textContent = `已自动回填表格。识别置信度 ${percent}%，提交前请人工确认。`;
@@ -2827,6 +3034,12 @@ function addAudit(text, detail = {}) {
 function formatTime(date) {
   const pad = (number) => String(number).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function todayInputDate() {
+  const value = new Date();
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 }
 
 render();

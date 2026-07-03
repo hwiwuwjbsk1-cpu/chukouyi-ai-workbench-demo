@@ -60,8 +60,13 @@ http://localhost:3000
 
 - `POST /api/auth/login`
 - `GET /api/tasks`
+- `GET /api/automation/rules`
+- `GET /api/automation/events`
+- `POST /api/expenses/invoices/autofill`
 - `POST /api/contracts/projects`
 - `POST /api/contracts/projects/:id/start-approval`
+- `POST /api/meetings`
+- `POST /api/reports/daily`
 - `POST /api/approvals/contracts`
 - `POST /api/approvals/contracts/:id/advance`
 
@@ -115,9 +120,9 @@ Demo 已内置 11 个机器人/数字员工的 Skills 编排：
 - 报价助理
 - 合同审批助理
 
-普通员工只看到业务入口，不直接看到后台 Skills。机器人由业务动作自动触发，例如上传发票图片后自动识别并回填本地报销表格，提交前由员工确认；上传合同材料后自动创建合同协作项目。基础版先不做企微回填，后续再对接企微、财务、人事、项目、合同系统。老板和总助账号可以进入“机器人编排”查看每个机器人调用哪些 Skills、输入输出是什么、写回哪个系统。
+普通员工只看到业务入口，不直接看到后台 Skills。机器人由后端业务事件自动触发，例如上传发票图片后触发 `invoice.uploaded` 并回填本地报销表格；上传合同材料后触发 `contract.uploaded` 并创建合同协作项目；创建会议触发 `meeting.created`；提交日报触发 `daily_report.submitted`。基础版先不做企微回填，后续再对接企微、财务、人事、项目、合同系统。老板和总助账号可以进入“机器人编排”查看每个场景触发哪些 Skills、输入输出是什么、写回哪个系统。
 
-详细矩阵见：`docs/robot-skills-matrix.md`
+详细矩阵见：`docs/robot-skills-matrix.md`，后端事件规格见：`docs/backend-event-skills-spec.md`
 
 ## Demo 账号
 

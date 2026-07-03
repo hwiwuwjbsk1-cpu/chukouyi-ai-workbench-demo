@@ -15,6 +15,29 @@ const modelConfig = {
   model: process.env.MODEL_NAME || process.env.OPENAI_MODEL || ""
 };
 
+const skillRegistry = {
+  "invoice-ocr": skillDef("发票识别与命名", "提取金额、日期、商户、税号、项目备注，并生成规范附件名。"),
+  "expense-policy-check": skillDef("报销规则校验", "检查费用类型、附件完整性、项目归属和提交前待确认项。"),
+  "project-cost-classify": skillDef("项目费用归类", "把费用归到对应项目、部门和费用科目。"),
+  "contract-intake": skillDef("合同材料读取", "读取合同、邮件摘要和附件，提取条款、版本和待确认事项。"),
+  "contract-risk": skillDef("合同风险分析", "按高/中/低风险输出可写入审批备注的结论。"),
+  "contract-group": skillDef("合同项目组创建", "按风险项自动拉齐业务、产品、财务、法务反馈事项。"),
+  "approval-routing": skillDef("审批链路路由", "根据角色、风险等级和前置反馈生成后续审批链。"),
+  "lifecycle-monitor": skillDef("履约风险监控", "把账期、担保、KPI、赔付和交付节点转为后续监控事项。"),
+  "meeting-schedule": skillDef("日程会议协调", "协调参会人、会议室、时间段和会议资源。"),
+  "minutes-extract": skillDef("会议纪要提取", "从会议目的或纪要中提取结论、待办和负责人。"),
+  "visitor-intake": skillDef("访客接待引导", "根据访客、预约和会议目的生成行政接待待办。"),
+  "work-summary": skillDef("日报周报汇总", "从日报文本和事项数据中整理完成事项、延期事项和下步计划。"),
+  "workload-score": skillDef("工作量化评分", "根据完成量、延期、协作和目标偏离生成量化分与提醒对象。")
+};
+
+const eventTriggerRules = {
+  "invoice.uploaded": eventRule("上传发票", "expense-assistant", "报销助理", ["invoice-ocr", "expense-policy-check", "project-cost-classify"], "报销基础表单 / 事项中心"),
+  "contract.uploaded": eventRule("上传合同/邮件材料", "contract-approval-assistant", "合同审批助理", ["contract-intake", "contract-risk", "contract-group", "approval-routing", "lifecycle-monitor"], "合同协作项目 / 审批中心 / 履约监控"),
+  "meeting.created": eventRule("创建会议/预订会议室", "schedule-meeting-assistant", "日程和会议助理", ["meeting-schedule", "minutes-extract", "visitor-intake"], "会议室预订 / 日程 / 会后事项"),
+  "daily_report.submitted": eventRule("提交日报", "report-assistant", "日报周报助理", ["work-summary", "workload-score", "minutes-extract"], "日报量化 / 主管提醒 / 事项中心")
+};
+
 const accounts = {
   employee: account("员工", "employee", "普通员工", "产品及运营部", "product", "CPD 专员", "主管", "本人数据"),
   manager: account("主管", "manager", "主管", "产品及运营部", "product", "部门主管", "老板", "本人 + 团队 + 负责项目"),
@@ -37,6 +60,7 @@ const contractStages = [
 ];
 
 let contracts = [];
+let automationEvents = [];
 let contractProjects = [
   contractProject(
     "CP-1004",
@@ -136,6 +160,21 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/automation/rules") {
+    if (!canViewAutomationGovernance(user)) throw httpError(403, "当前角色不能查看机器人编排规则。");
+    sendJson(res, 200, { rules: automationRuleList() });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/automation/events") {
+    const visibleEvents = automationEvents
+      .filter((item) => canSeeAutomationEvent(user, item))
+      .slice(0, 30)
+      .map(publicAutomationEvent);
+    sendJson(res, 200, { events: visibleEvents });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/tasks") {
     sendJson(res, 200, { tasks: tasks.filter((item) => canSeeTask(user, item)) });
     return;
@@ -181,6 +220,26 @@ async function handleApi(req, res, url) {
     }
     const submission = await readContractSubmission(req);
     const payload = await createContractProject(user, submission);
+    sendJson(res, 201, payload);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/meetings") {
+    if (!canInitiateTaskType(user, "meeting")) {
+      throw httpError(403, "当前角色不能创建会议。");
+    }
+    const body = await readJson(req);
+    const payload = createMeetingWorkflow(user, body);
+    sendJson(res, 201, payload);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/reports/daily") {
+    if (!canInitiateTaskType(user, "daily_report")) {
+      throw httpError(403, "当前角色不能提交日报。");
+    }
+    const body = await readJson(req);
+    const payload = createDailyReportWorkflow(user, body);
     sendJson(res, 201, payload);
     return;
   }
@@ -231,8 +290,97 @@ function publicAccount(item, username) {
   return { ...rest, username };
 }
 
+function skillDef(name, purpose) {
+  return { name, purpose };
+}
+
+function eventRule(businessAction, robotId, robotName, skills, outputTarget) {
+  return { businessAction, robotId, robotName, skills, outputTarget };
+}
+
 function task(id, title, type, source, owner, status, due, sourceName, initiator) {
   return { id, title, type, source, owner, status, due, sourceName, initiator, result: "" };
+}
+
+function automationRuleList() {
+  return Object.entries(eventTriggerRules).map(([eventType, rule]) => ({
+    eventType,
+    businessAction: rule.businessAction,
+    robotId: rule.robotId,
+    robotName: rule.robotName,
+    skills: rule.skills.map((id) => ({
+      id,
+      name: skillRegistry[id]?.name || id,
+      purpose: skillRegistry[id]?.purpose || "待定义"
+    })),
+    outputTarget: rule.outputTarget
+  }));
+}
+
+function triggerBusinessEvent(user, eventType, context = {}) {
+  const rule = eventTriggerRules[eventType];
+  if (!rule) throw httpError(500, `未配置后端事件规则：${eventType}`);
+  const event = {
+    id: nextId("EVT"),
+    eventType,
+    businessAction: rule.businessAction,
+    robotId: rule.robotId,
+    robotName: rule.robotName,
+    actor: user.name,
+    actorRole: user.roleName || user.role,
+    objectType: context.objectType || "",
+    objectId: context.objectId || "",
+    taskId: context.taskId || "",
+    inputSummary: context.inputSummary || [],
+    outputTarget: context.outputTarget || rule.outputTarget,
+    outputs: context.outputs || [],
+    skills: rule.skills.map((id, index) => ({
+      id,
+      name: skillRegistry[id]?.name || id,
+      purpose: skillRegistry[id]?.purpose || "待定义",
+      status: "completed",
+      result: context.skillResults?.[id] || defaultSkillResult(id, index)
+    })),
+    status: "completed",
+    createdAt: nowDisplay()
+  };
+  automationEvents.unshift(event);
+  return event;
+}
+
+function defaultSkillResult(skillId, index) {
+  const name = skillRegistry[skillId]?.name || skillId;
+  return `${name} 已完成，第 ${index + 1} 步结果已写入后续业务对象。`;
+}
+
+function attachAutomationEvent(target, event) {
+  if (!target || !event) return target;
+  target.automationEventId = event.id;
+  target.robotName = event.robotName;
+  target.skillNames = event.skills.map((item) => item.name);
+  target.automationSummary = `${event.businessAction} -> ${event.robotName} -> ${event.skills.length} 个 Skills`;
+  return target;
+}
+
+function publicAutomationEvent(event) {
+  return {
+    id: event.id,
+    eventType: event.eventType,
+    businessAction: event.businessAction,
+    robotId: event.robotId,
+    robotName: event.robotName,
+    actor: event.actor,
+    actorRole: event.actorRole,
+    objectType: event.objectType,
+    objectId: event.objectId,
+    taskId: event.taskId,
+    inputSummary: event.inputSummary,
+    outputTarget: event.outputTarget,
+    outputs: event.outputs,
+    skills: event.skills,
+    status: event.status,
+    createdAt: event.createdAt
+  };
 }
 
 function createInvoiceAutofill(user, body) {
@@ -275,11 +423,34 @@ function createInvoiceAutofill(user, body) {
   newTask.skills = ["发票识别与命名", "报销规则校验", "项目费用归类"];
   newTask.invoiceForm = form;
   newTask.result = "发票字段已识别并回填本地报销表格，提交前需人工确认金额和项目归属。";
+  const automationEvent = triggerBusinessEvent(user, "invoice.uploaded", {
+    objectType: "expense_form",
+    objectId: form.id,
+    taskId: newTask.id,
+    inputSummary: [
+      `文件：${fileName}`,
+      `项目备注：${body.note || "未填写"}`,
+      `发起人：${user.name}`
+    ],
+    outputs: [
+      `报销表单：${form.id}`,
+      `商户：${fields.merchant}`,
+      `金额：${fields.amount}`,
+      `附件命名：${fields.attachmentName}`
+    ],
+    skillResults: {
+      "invoice-ocr": `识别商户 ${fields.merchant}、日期 ${fields.invoiceDate}、金额 ${fields.amount}`,
+      "expense-policy-check": "生成提交前人工确认项：金额、项目归属、税号",
+      "project-cost-classify": `归类到 ${fields.project}`
+    }
+  });
+  attachAutomationEvent(newTask, automationEvent);
   tasks.unshift(newTask);
   return {
     fields,
     form,
     task: newTask,
+    automationEvent: publicAutomationEvent(automationEvent),
     confidence: inferred.confidence,
     message: "报销助理已自动识别发票并回填本地报销表格"
   };
@@ -291,7 +462,7 @@ function inferInvoiceFields(fileName, note) {
   const isDidi = text.includes("didi") || text.includes("滴滴") || text.includes("taxi");
   const isHotel = text.includes("hotel") || text.includes("酒店");
   const isFlight = text.includes("flight") || text.includes("机票") || text.includes("航班");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDate();
   if (isDidi) {
     return {
       expenseType: "交通费",
@@ -338,6 +509,164 @@ function inferInvoiceFields(fileName, note) {
     remark: "已自动回填基础表格，低置信字段需人工确认。",
     confidence: amountMatch ? 0.72 : 0.58
   };
+}
+
+function createMeetingWorkflow(user, body) {
+  const title = String(body.title || "内部会议").trim();
+  const meetingTime = String(body.meetingTime || body.time || "待确认").trim();
+  const room = String(body.room || "默认会议室").trim();
+  const participants = String(body.participants || "相关同事").trim();
+  const purpose = String(body.purpose || body.note || "会议事项").trim();
+  const meeting = {
+    id: nextId("MTG"),
+    title,
+    meetingTime,
+    room,
+    participants,
+    purpose,
+    organizer: user.name,
+    status: "已创建，待参会人确认"
+  };
+  const newTask = task(
+    nextId("T"),
+    `${user.name} 创建会议：${title}`,
+    "meeting",
+    "ai_workbench",
+    "日程和会议助理",
+    "processing",
+    todayDate(),
+    "AI 工作台",
+    user.name
+  );
+  newTask.meeting = meeting;
+  newTask.result = "日程和会议助理已协调会议室、参会人日程，并预置会后纪要事项。";
+  const automationEvent = triggerBusinessEvent(user, "meeting.created", {
+    objectType: "meeting",
+    objectId: meeting.id,
+    taskId: newTask.id,
+    inputSummary: [
+      `主题：${title}`,
+      `时间：${meetingTime}`,
+      `会议室：${room}`,
+      `参会人：${participants}`
+    ],
+    outputs: [
+      `会议记录：${meeting.id}`,
+      `会议室：${room}`,
+      "日程邀请待同步",
+      "会后纪要事项已预置"
+    ],
+    skillResults: {
+      "meeting-schedule": `生成会议 ${meeting.id}，预订 ${room}`,
+      "minutes-extract": "会后将从纪要中提取结论、负责人和截止时间",
+      "visitor-intake": purpose.includes("访客") ? "检测到访客场景，生成接待提醒" : "未检测到访客，不创建接待流程"
+    }
+  });
+  attachAutomationEvent(newTask, automationEvent);
+  tasks.unshift(newTask);
+  return {
+    meeting,
+    task: newTask,
+    automationEvent: publicAutomationEvent(automationEvent),
+    message: "会议已创建，日程和会议助理已自动介入"
+  };
+}
+
+function createDailyReportWorkflow(user, body) {
+  const reportText = String(body.reportText || body.content || "").trim();
+  if (reportText.length < 6) throw httpError(400, "日报内容太短，请补充今天完成事项。");
+  const reportDate = String(body.reportDate || todayDate()).trim();
+  const plan = String(body.plan || body.tomorrow || "明日计划待补充").trim();
+  const score = inferWorkloadScore(reportText, plan);
+  const deviation = score < 70;
+  const report = {
+    id: nextId("RPT"),
+    reportDate,
+    author: user.name,
+    summary: summarizeReport(reportText),
+    plan,
+    workloadScore: score,
+    deviation,
+    status: deviation ? "需主管确认是否偏离计划" : "已量化，待月度汇总"
+  };
+  const newTask = task(
+    nextId("T"),
+    `${user.name} 提交日报：AI 已量化工作量`,
+    "daily_report",
+    "ai_workbench",
+    user.name,
+    deviation ? "need_info" : "processing",
+    reportDate,
+    "AI 工作台",
+    user.name
+  );
+  newTask.report = report;
+  newTask.result = `日报已汇总，工作量化分 ${score}。${deviation ? "低于阈值，提醒主管确认是否偏离计划。" : "进入周报/月度汇总。"}`;
+
+  let reminderTask = null;
+  if (deviation) {
+    reminderTask = task(
+      nextId("T"),
+      `${user.name} 工作量化低于阈值，请主管确认方向`,
+      "work_deviation",
+      "hr",
+      "主管",
+      "pending",
+      todayDate(),
+      "AI 工作台",
+      user.name
+    );
+    reminderTask.result = `AI 工作量化分 ${score}，请主管判断是计划偏离、资源不足还是任务记录不完整。`;
+  }
+
+  const automationEvent = triggerBusinessEvent(user, "daily_report.submitted", {
+    objectType: "daily_report",
+    objectId: report.id,
+    taskId: newTask.id,
+    inputSummary: [
+      `日期：${reportDate}`,
+      `日报长度：${reportText.length}`,
+      `明日计划：${plan}`
+    ],
+    outputs: [
+      `日报：${report.id}`,
+      `工作量化分：${score}`,
+      deviation ? "主管提醒已生成" : "进入周报/月度汇总"
+    ],
+    skillResults: {
+      "work-summary": report.summary,
+      "workload-score": `量化分 ${score}，${deviation ? "低于阈值" : "正常"}`,
+      "minutes-extract": "从日报文本中提取下步行动和待跟进事项"
+    }
+  });
+  attachAutomationEvent(newTask, automationEvent);
+  if (reminderTask) attachAutomationEvent(reminderTask, automationEvent);
+  tasks.unshift(newTask);
+  if (reminderTask) tasks.unshift(reminderTask);
+  return {
+    report,
+    task: newTask,
+    reminderTask,
+    automationEvent: publicAutomationEvent(automationEvent),
+    message: "日报已提交，日报周报助理已自动量化"
+  };
+}
+
+function summarizeReport(text) {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= 60) return compact;
+  return `${compact.slice(0, 60)}...`;
+}
+
+function inferWorkloadScore(text, plan) {
+  const content = `${text} ${plan}`;
+  let score = 76;
+  const doneMatches = content.match(/完成|推进|上线|交付|确认|解决|整理|输出|跟进/g);
+  if (doneMatches) score += Math.min(doneMatches.length * 4, 18);
+  const riskMatches = content.match(/延期|卡住|阻塞|未完成|等待|不确定|偏离|问题/g);
+  if (riskMatches) score -= Math.min(riskMatches.length * 8, 28);
+  if (content.length > 120) score += 4;
+  return Math.max(45, Math.min(96, score));
 }
 
 function contractTask(id, title, owner, status, due, approvalStage, initiator, result) {
@@ -427,6 +756,7 @@ function publicContractProject(project) {
     actions: project.actions,
     lifecycle: project.lifecycle,
     audit: project.audit,
+    automationEventId: project.automationEventId || "",
     approvalTaskId: project.approvalTaskId || "",
     contractId: project.contractId || ""
   };
@@ -465,12 +795,39 @@ async function createContractProject(user, body) {
     project
   );
   project.taskId = newTask.id;
+  const automationEvent = triggerBusinessEvent(user, "contract.uploaded", {
+    objectType: "contract_project",
+    objectId: project.id,
+    taskId: newTask.id,
+    inputSummary: [
+      `文件：${project.fileName}`,
+      `项目：${project.projectName}`,
+      `文本长度：${contractText.length}`
+    ],
+    outputs: [
+      `合同协作项目：${project.id}`,
+      "风险备注已生成",
+      "产品、财务、法务反馈事项已分派",
+      "反馈确认后进入正式审批"
+    ],
+    skillResults: {
+      "contract-intake": `读取合同材料，文本长度 ${contractText.length}`,
+      "contract-risk": `生成风险备注：${modelResult.approvalRemark}`,
+      "contract-group": "创建业务、产品、财务、法务、AI 五类参与角色",
+      "approval-routing": "正式审批链预置为：AI 预审 -> 主管/带教 -> 法务 -> 总助 -> 老板",
+      "lifecycle-monitor": "审批后进入归档、交付、账期、担保、KPI 和赔付监控"
+    }
+  });
+  attachAutomationEvent(newTask, automationEvent);
+  project.automationEventId = automationEvent.id;
+  project.audit.push(`后端事件 ${automationEvent.id} 触发${automationEvent.robotName}`);
   contractProjects.unshift(project);
   tasks.unshift(newTask);
   return {
     project: publicContractProject(project),
     task: newTask,
     analysis: modelResult,
+    automationEvent: publicAutomationEvent(automationEvent),
     message: "合同协作项目已创建，正式审批将在反馈确认后发起"
   };
 }
@@ -517,9 +874,34 @@ async function createContractApproval(user, body) {
     contractId: contract.id,
     analysis: modelResult
   };
+  const automationEvent = triggerBusinessEvent(user, "contract.uploaded", {
+    objectType: "contract_approval",
+    objectId: contract.id,
+    taskId: newTask.id,
+    inputSummary: [
+      `文件：${contract.fileName}`,
+      `项目：${contract.project}`,
+      `文本长度：${contractText.length}`
+    ],
+    outputs: [
+      `合同审批：${contract.id}`,
+      "低/中/高风险已写入审批备注",
+      "当前仍按阶段控制可见范围"
+    ],
+    skillResults: {
+      "contract-intake": `读取合同材料，文本长度 ${contractText.length}`,
+      "contract-risk": `生成审批备注：${modelResult.approvalRemark}`,
+      "contract-group": "直接审批接口不创建项目组，仅保留兼容事件记录",
+      "approval-routing": "审批链从 AI 预审开始流转",
+      "lifecycle-monitor": "归档后进入后续履约风险监控"
+    }
+  });
+  attachAutomationEvent(newTask, automationEvent);
+  contract.automationEventId = automationEvent.id;
+  contract.audit.push(`后端事件 ${automationEvent.id} 触发${automationEvent.robotName}`);
   contracts.unshift(contract);
   tasks.unshift(newTask);
-  return { contract, task: newTask, analysis: modelResult, message: "合同已进入 AI 预审，老板暂不可见" };
+  return { contract, task: newTask, analysis: modelResult, automationEvent: publicAutomationEvent(automationEvent), message: "合同已进入 AI 预审，老板暂不可见" };
 }
 
 async function extractContractText(body) {
@@ -769,6 +1151,8 @@ function ownerFor(type) {
   if (["onboard", "probation", "transfer", "resign", "hr_file"].includes(type)) return "HR";
   if (["contract_project"].includes(type)) return "合同项目组";
   if (["contract"].includes(type)) return "合同审批助理";
+  if (["meeting"].includes(type)) return "日程和会议助理";
+  if (["daily_report"].includes(type)) return "日报周报助理";
   if (["recruiting"].includes(type)) return "HR";
   return "主管";
 }
@@ -826,6 +1210,7 @@ function canInitiateTaskType(user, type) {
     meeting: "all",
     schedule: "all",
     todo: "all",
+    daily_report: "staff",
     permission: ["employee", "manager", "hr", "finance", "legal"],
     contract: ["employee", "manager"],
     contract_project: ["employee", "manager"],
@@ -853,6 +1238,15 @@ function canInitiateTaskType(user, type) {
   if (allowed === "all") return true;
   if (allowed === "staff") return user.role !== "boss";
   return allowed.includes(user.role);
+}
+
+function canViewAutomationGovernance(user) {
+  return ["boss", "assistant"].includes(user.role);
+}
+
+function canSeeAutomationEvent(user, event) {
+  if (canViewAutomationGovernance(user)) return true;
+  return event.actor === user.name || event.actor === user.username;
 }
 
 function requireUser(req) {
@@ -996,6 +1390,21 @@ function contentType(filePath) {
 
 function nextId(prefix) {
   return `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+function nowDisplay() {
+  const value = new Date();
+  const pad = (input) => String(input).padStart(2, "0");
+  return [
+    `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`,
+    `${pad(value.getHours())}:${pad(value.getMinutes())}`
+  ].join(" ");
+}
+
+function todayDate() {
+  const value = new Date();
+  const pad = (input) => String(input).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 }
 
 function sendJson(res, statusCode, payload) {
