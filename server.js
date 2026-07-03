@@ -892,6 +892,10 @@ function createMeetingWorkflow(user, body) {
   const room = String(body.room || "默认会议室").trim();
   const participants = String(body.participants || "相关同事").trim();
   const purpose = String(body.purpose || body.note || "会议事项").trim();
+  const reminder = String(body.reminder || "15分钟前").trim();
+  const repeat = String(body.repeat || "不重复").trim();
+  const duration = String(body.duration || "1小时").trim();
+  const description = String(body.description || "").trim();
   const meeting = {
     id: nextId("MTG"),
     title,
@@ -899,22 +903,26 @@ function createMeetingWorkflow(user, body) {
     room,
     participants,
     purpose,
+    reminder,
+    repeat,
+    duration,
+    description,
     organizer: user.name,
-    status: "已创建，待参会人确认"
+    status: "已预定，已加入我的待办"
   };
   const newTask = task(
     nextId("T"),
-    `${user.name} 创建会议：${title}`,
+    `我的会议预定：${title}`,
     "meeting",
     "ai_workbench",
-    "日程和会议助理",
-    "processing",
+    user.name,
+    "pending",
     todayDate(),
     "AI 工作台",
     user.name
   );
   newTask.meeting = meeting;
-  newTask.result = "日程和会议助理已协调会议室、参会人日程，并预置会后纪要事项。";
+  newTask.result = `已预定 ${room} ${meetingTime}，提醒：${reminder}，重复：${repeat}。`;
   const automationEvent = triggerBusinessEvent(user, "meeting.created", {
     objectType: "meeting",
     objectId: meeting.id,
@@ -923,10 +931,13 @@ function createMeetingWorkflow(user, body) {
       `主题：${title}`,
       `时间：${meetingTime}`,
       `会议室：${room}`,
-      `参会人：${participants}`
+      `参会人：${participants}`,
+      `提醒：${reminder}`,
+      `重复：${repeat}`
     ],
     outputs: [
       `会议记录：${meeting.id}`,
+      `我的待办：${newTask.id}`,
       `会议室：${room}`,
       "日程邀请待同步",
       "会后纪要事项已预置"

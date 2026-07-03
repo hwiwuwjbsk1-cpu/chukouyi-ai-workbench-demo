@@ -74,13 +74,13 @@ const contractProjectStages = [
 ];
 
 const meetingRooms = [
-  meetingRoom("创新会议室（小型会议室）", "4人", "电视, 白板", [[0, 12]]),
-  meetingRoom("担当会议室（小型会议室）", "4人", "电视, 白板", [[0, 10.5], [10.5, 12.5]]),
-  meetingRoom("共赢会议室（中型会议室）", "8人", "电视, 白板", [[0, 11]]),
-  meetingRoom("深圳大会议室", "12人", "电视, 白板", [[0, 11]]),
-  meetingRoom("深圳小办公室", "4人", "白板", [[0, 11]]),
-  meetingRoom("幸福会议室（大型会议室）", "20人", "投影, 白板", [[0, 9.5], [14.5, 15.5]]),
-  meetingRoom("专注会议室（小型会议室）", "4人", "电视, 白板", [[0, 10.5], [15, 16]])
+  meetingRoom("创新会议室（小型会议室）", "4人", "电视, 白板", [[0, 12, "彭婷"]]),
+  meetingRoom("担当会议室（小型会议室）", "4人", "电视, 白板", [[0, 10.5, "行政"], [10.5, 12.5, "彭婷"]]),
+  meetingRoom("共赢会议室（中型会议室）", "8人", "电视, 白板", [[0, 11, "运营"]]),
+  meetingRoom("深圳大会议室", "12人", "电视, 白板", [[0, 11, "深圳团队"]]),
+  meetingRoom("深圳小办公室", "4人", "白板", [[0, 11, "深圳团队"]]),
+  meetingRoom("幸福会议室（大型会议室）", "20人", "投影, 白板", [[0, 9.5, "培训"], [14.5, 15.5, "HR"]]),
+  meetingRoom("专注会议室（小型会议室）", "4人", "电视, 白板", [[0, 10.5, "财务"], [15, 16, "法务"]])
 ];
 
 const fallbackAutomationRules = [
@@ -1758,23 +1758,84 @@ function renderMeetingModal(item) {
           ${meetingRooms.map((room, index) => renderMeetingRoomRow(room, index)).join("")}
         </div>
 
-        <div class="meeting-reserve-strip">
-          <div>
-            <span>当前选择</span>
-            <strong id="meetingSelectionText">${escapeHTML(defaultRoom.name)} · ${escapeHTML(defaultTime)}</strong>
+        <div class="meeting-reserve-panel">
+          <div class="meeting-form-main">
+            <label class="meeting-title-input">
+              <span>会议主题</span>
+              <input id="meetingTitle" value="${escapeHTML(state.user.name)}预定的会议" />
+            </label>
+            <div class="meeting-form-grid">
+              <label>
+                <span>参会人</span>
+                <div class="attendee-picker">
+                  <div class="attendee-chips" id="meetingAttendeeChips">
+                    <span class="attendee-chip">${escapeHTML(state.user.name)}</span>
+                  </div>
+                  <input id="meetingAttendeeInput" placeholder="添加同事/客户" />
+                  <button type="button" data-add-meeting-attendee aria-label="添加参会人">${uiIcon("people")}</button>
+                </div>
+              </label>
+              <label>
+                <span>开始</span>
+                <input id="meetingStartDisplay" value="${escapeHTML(`${meetingDateLabel()} ${defaultTime.split("-")[0]}`)}" />
+              </label>
+              <label>
+                <span>时长</span>
+                <select id="meetingDuration">
+                  <option>1小时</option>
+                  <option>30分钟</option>
+                  <option>1.5小时</option>
+                  <option>2小时</option>
+                </select>
+              </label>
+              <label>
+                <span>地点</span>
+                <input id="meetingLocation" value="${escapeHTML(defaultRoom.name)}" />
+              </label>
+              <label>
+                <span>附件</span>
+                <button class="meeting-attach-btn" type="button">添加会议附件 ${uiIcon("chevron-down")}</button>
+              </label>
+              <label>
+                <span>提醒</span>
+                <select id="meetingReminder">
+                  <option>15分钟前</option>
+                  <option>30分钟前</option>
+                  <option>不提醒</option>
+                </select>
+              </label>
+              <label>
+                <span>重复</span>
+                <select id="meetingRepeat">
+                  <option>不重复</option>
+                  <option>每天</option>
+                  <option>每周</option>
+                  <option>每月</option>
+                </select>
+              </label>
+            </div>
+            <label class="meeting-description">
+              <span>描述</span>
+              <textarea id="meetingDescription" placeholder="请输入描述"></textarea>
+            </label>
           </div>
-          <label>
-            <span>会议主题</span>
-            <input id="meetingTitle" value="内部会议" />
-          </label>
-          <label>
-            <span>参会人</span>
-            <input id="meetingParticipants" value="相关同事" />
-          </label>
+          <aside class="meeting-preview">
+            <div class="meeting-preview-date">${escapeHTML(meetingDateLabel())}</div>
+            <div class="meeting-preview-self">
+              <div class="avatar small">${escapeHTML(state.user.name.slice(0, 1))}</div>
+              <span>我</span>
+            </div>
+            <div class="meeting-preview-block">
+              <span id="meetingPreviewStart">${escapeHTML(defaultTime.split("-")[0])}</span>
+              <strong id="meetingPreviewAvailability">所有人都有空</strong>
+              <em id="meetingPreviewEnd">${escapeHTML(defaultTime.split("-")[1])}</em>
+            </div>
+          </aside>
         </div>
 
         <input type="hidden" id="meetingTime" value="${escapeHTML(`${todayInputDate()} ${defaultTime}`)}" />
         <input type="hidden" id="meetingRoom" value="${escapeHTML(defaultRoom.name)}" />
+        <input type="hidden" id="meetingParticipants" value="${escapeHTML(state.user.name)}" />
         <input type="hidden" id="meetingPurpose" value="会议室预订" />
       </div>
     `,
@@ -1811,7 +1872,9 @@ function renderMeetingRoomRow(room, roomIndex) {
 }
 
 function renderMeetingSlot(room, roomIndex, hour) {
-  const booked = room.bookings.some(([start, end]) => hour >= Math.floor(start) && hour < Math.ceil(end));
+  const booking = room.bookings.find(([start, end]) => hour >= Math.floor(start) && hour < Math.ceil(end));
+  const booked = Boolean(booking);
+  const booker = booking?.[2] || "已预定";
   const selected = roomIndex === 0 && hour === 13;
   return `
     <button
@@ -1822,6 +1885,8 @@ function renderMeetingSlot(room, roomIndex, hour) {
       data-room="${escapeHTML(room.name)}"
       data-start="${String(hour).padStart(2, "0")}:00"
       data-end="${String(hour + 1).padStart(2, "0")}:00"
+      data-booker="${escapeHTML(booker)}"
+      title="${booked ? `${escapeHTML(booker)} 已预定 ${hour}:00-${hour + 1}:00` : `${escapeHTML(room.name)} ${hour}:00-${hour + 1}:00`}"
       aria-label="${escapeHTML(room.name)} ${hour}:00-${hour + 1}:00"
     ></button>
   `;
@@ -2766,6 +2831,20 @@ function bindViewEvents() {
     button.addEventListener("click", () => selectMeetingSlot(button));
   });
 
+  document.querySelectorAll("[data-add-meeting-attendee]").forEach((button) => {
+    button.addEventListener("click", addMeetingAttendee);
+  });
+
+  const attendeeInput = document.getElementById("meetingAttendeeInput");
+  if (attendeeInput) {
+    attendeeInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addMeetingAttendee();
+      }
+    });
+  }
+
   document.querySelectorAll("[data-skill-change]").forEach((button) => {
     button.addEventListener("click", () => {
       document.getElementById(`skillUpload-${button.dataset.skillChange}`)?.click();
@@ -2873,14 +2952,51 @@ function selectMeetingSlot(button) {
   button.classList.add("selected");
   const room = button.dataset.room || "默认会议室";
   const timeRange = `${button.dataset.start}-${button.dataset.end}`;
+  const startDisplay = document.getElementById("meetingStartDisplay");
+  const location = document.getElementById("meetingLocation");
   const meetingRoom = document.getElementById("meetingRoom");
   const meetingTime = document.getElementById("meetingTime");
   const meetingPurpose = document.getElementById("meetingPurpose");
   const selectionText = document.getElementById("meetingSelectionText");
+  const previewStart = document.getElementById("meetingPreviewStart");
+  const previewEnd = document.getElementById("meetingPreviewEnd");
+  const previewAvailability = document.getElementById("meetingPreviewAvailability");
+  if (startDisplay) startDisplay.value = `${meetingDateLabel()} ${button.dataset.start}`;
+  if (location) location.value = room;
   if (meetingRoom) meetingRoom.value = room;
   if (meetingTime) meetingTime.value = `${todayInputDate()} ${timeRange}`;
   if (meetingPurpose) meetingPurpose.value = `${room} 预订：${timeRange}`;
   if (selectionText) selectionText.textContent = `${room} · ${timeRange}`;
+  if (previewStart) previewStart.textContent = button.dataset.start || "";
+  if (previewEnd) previewEnd.textContent = button.dataset.end || "";
+  if (previewAvailability) previewAvailability.textContent = "所有人都有空";
+}
+
+function addMeetingAttendee() {
+  const input = document.getElementById("meetingAttendeeInput");
+  const chips = document.getElementById("meetingAttendeeChips");
+  if (!input || !chips) return;
+  const name = input.value.trim();
+  if (!name) return;
+  const existing = Array.from(chips.querySelectorAll(".attendee-chip")).map((item) => item.textContent.trim());
+  if (!existing.includes(name)) {
+    const chip = document.createElement("span");
+    chip.className = "attendee-chip";
+    chip.textContent = name;
+    chips.appendChild(chip);
+  }
+  input.value = "";
+  syncMeetingParticipants();
+}
+
+function syncMeetingParticipants() {
+  const hidden = document.getElementById("meetingParticipants");
+  const chips = document.getElementById("meetingAttendeeChips");
+  if (!hidden || !chips) return;
+  hidden.value = Array.from(chips.querySelectorAll(".attendee-chip"))
+    .map((item) => item.textContent.trim())
+    .filter(Boolean)
+    .join("、");
 }
 
 function bindHomeClock() {
@@ -3101,14 +3217,30 @@ async function submitContractApproval() {
 }
 
 async function submitMeeting() {
+  addMeetingAttendee();
+  const description = document.getElementById("meetingDescription")?.value.trim() || "";
+  const reminder = document.getElementById("meetingReminder")?.value || "15分钟前";
+  const repeat = document.getElementById("meetingRepeat")?.value || "不重复";
+  const duration = document.getElementById("meetingDuration")?.value || "1小时";
+  const location = document.getElementById("meetingLocation")?.value.trim() || document.getElementById("meetingRoom")?.value.trim() || "默认会议室";
   return apiRequest("/api/meetings", {
     method: "POST",
     body: JSON.stringify({
       title: document.getElementById("meetingTitle")?.value.trim() || "内部会议",
       meetingTime: document.getElementById("meetingTime")?.value.trim() || "待确认",
-      room: document.getElementById("meetingRoom")?.value.trim() || "默认会议室",
+      room: location,
       participants: document.getElementById("meetingParticipants")?.value.trim() || "相关同事",
-      purpose: document.getElementById("meetingPurpose")?.value.trim() || "会议事项"
+      purpose: [
+        document.getElementById("meetingPurpose")?.value.trim() || "会议事项",
+        description ? `描述：${description}` : "",
+        `时长：${duration}`,
+        `提醒：${reminder}`,
+        `重复：${repeat}`
+      ].filter(Boolean).join("；"),
+      description,
+      reminder,
+      repeat,
+      duration
     })
   });
 }

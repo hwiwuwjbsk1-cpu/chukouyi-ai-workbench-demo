@@ -2851,6 +2851,206 @@ h3 {
   outline: 0;
 }
 
+.meeting-reserve-panel {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: minmax(520px, 1fr) 260px;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(18, 111, 214, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 45px rgba(18, 81, 141, 0.11);
+}
+
+.meeting-form-main {
+  display: grid;
+  gap: 12px;
+}
+
+.meeting-title-input,
+.meeting-form-grid label,
+.meeting-description {
+  display: grid;
+  gap: 6px;
+}
+
+.meeting-title-input span,
+.meeting-form-grid span,
+.meeting-description span {
+  color: #40536b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.meeting-title-input input,
+.meeting-form-grid input,
+.meeting-form-grid select,
+.meeting-description textarea {
+  width: 100%;
+  border: 1px solid rgba(18, 111, 214, 0.14);
+  border-radius: 10px;
+  background: #fff;
+  color: #12263d;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 760;
+  outline: 0;
+  transition: border-color var(--motion), box-shadow var(--motion);
+}
+
+.meeting-title-input input,
+.meeting-form-grid input,
+.meeting-form-grid select {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.meeting-description textarea {
+  min-height: 76px;
+  resize: vertical;
+  padding: 10px;
+  line-height: 1.5;
+}
+
+.meeting-title-input input:focus,
+.meeting-form-grid input:focus,
+.meeting-form-grid select:focus,
+.meeting-description textarea:focus {
+  border-color: rgba(18, 111, 214, 0.36);
+  box-shadow: 0 0 0 4px rgba(18, 111, 214, 0.08);
+}
+
+.meeting-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attendee-picker {
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(18, 111, 214, 0.14);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.attendee-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.attendee-chip {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #eef4fb;
+  color: #243b53;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.attendee-picker input {
+  min-height: 26px;
+  padding: 0 4px;
+  border: 0;
+  box-shadow: none;
+}
+
+.attendee-picker button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: var(--primary);
+}
+
+.attendee-picker .ui-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.meeting-attach-btn {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(18, 111, 214, 0.14);
+  border-radius: 10px;
+  background: #fff;
+  color: #12263d;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.meeting-attach-btn .ui-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.meeting-preview {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 10px;
+  border-left: 1px solid rgba(20, 45, 76, 0.08);
+  padding-left: 14px;
+}
+
+.meeting-preview-date {
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.meeting-preview-self {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: #17283d;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.meeting-preview-block {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 118px;
+  padding: 12px 10px;
+  border-left: 3px solid #1677ff;
+  background: linear-gradient(90deg, rgba(229, 247, 232, 0.9), rgba(229, 247, 232, 0.36));
+  color: #05a13b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.meeting-preview-block strong {
+  color: #05a13b;
+  font-size: 13px;
+}
+
+.meeting-preview-block em {
+  color: #05a13b;
+  font-style: normal;
+}
+
 .permission-approval-form {
   display: grid;
   gap: 16px;
@@ -3618,6 +3818,21 @@ h3 {
   .meeting-filters,
   .meeting-bookings {
     justify-self: start;
+  }
+
+  .meeting-reserve-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .meeting-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .meeting-preview {
+    border-left: 0;
+    border-top: 1px solid rgba(20, 45, 76, 0.08);
+    padding-left: 0;
+    padding-top: 12px;
   }
 
   .permission-form-row {
