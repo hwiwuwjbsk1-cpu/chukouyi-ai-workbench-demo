@@ -73,6 +73,16 @@ const contractProjectStages = [
   { key: "lifecycle", label: "归档与履约监控" }
 ];
 
+const meetingRooms = [
+  meetingRoom("创新会议室（小型会议室）", "4人", "电视, 白板", [[0, 12]]),
+  meetingRoom("担当会议室（小型会议室）", "4人", "电视, 白板", [[0, 10.5], [10.5, 12.5]]),
+  meetingRoom("共赢会议室（中型会议室）", "8人", "电视, 白板", [[0, 11]]),
+  meetingRoom("深圳大会议室", "12人", "电视, 白板", [[0, 11]]),
+  meetingRoom("深圳小办公室", "4人", "白板", [[0, 11]]),
+  meetingRoom("幸福会议室（大型会议室）", "20人", "投影, 白板", [[0, 9.5], [14.5, 15.5]]),
+  meetingRoom("专注会议室（小型会议室）", "4人", "电视, 白板", [[0, 10.5], [15, 16]])
+];
+
 const fallbackAutomationRules = [
   automationRule("invoice.uploaded", "上传发票", "报销助理", ["发票识别与命名", "报销规则校验", "项目费用归类"], "报销基础表单 / 事项中心", "POST /api/expenses/invoices/autofill"),
   automationRule("contract.uploaded", "上传合同/邮件材料", "合同审批助理", ["合同材料读取", "合同风险分析", "合同项目组创建", "审批链路路由", "履约风险监控"], "合同协作项目 / 审批中心 / 履约监控", "POST /api/contracts/projects"),
@@ -606,6 +616,10 @@ function automationRule(eventType, businessAction, robotName, skills, outputTarg
   };
 }
 
+function meetingRoom(name, capacity, equipment, bookings) {
+  return { name, capacity, equipment, bookings };
+}
+
 function profile(name, department, departmentCode, position, manager, tags, currentWork, summary, handover, score, monthly, risk) {
   return { name, department, departmentCode, position, manager, tags, currentWork, summary, handover, score, monthly, risk };
 }
@@ -715,6 +729,8 @@ function uiIcon(name) {
     bell: `<path d="M18 8.5a6 6 0 0 0-12 0c0 7-3 7-3 8.8h18c0-1.8-3-1.8-3-8.8Z"></path><path d="M9.8 20a2.4 2.4 0 0 0 4.4 0"></path>`,
     help: `<circle cx="12" cy="12" r="9"></circle><path d="M9.6 9a2.8 2.8 0 0 1 5.3 1.2c0 2-2.9 2.2-2.9 4"></path><path d="M12 17.5h.01"></path>`,
     "chevron-down": `<path d="m7 10 5 5 5-5"></path>`,
+    "chevron-left": `<path d="m15 18-6-6 6-6"></path>`,
+    "chevron-right": `<path d="m9 18 6-6-6-6"></path>`,
     "arrow-right": `<path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path>`,
     robot: `<rect x="5" y="7" width="14" height="11" rx="3"></rect><path d="M12 7V4"></path><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><path d="M9.5 16h5"></path>`
   };
@@ -1600,10 +1616,10 @@ function renderModal() {
   return "";
 }
 
-function modalShell(title, note, body, footer = "") {
+function modalShell(title, note, body, footer = "", panelClass = "") {
   return `
     <div class="modal-backdrop" data-modal-backdrop>
-      <section class="modal-panel" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}">
+      <section class="modal-panel ${escapeHTML(panelClass)}" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}">
         <div class="modal-head">
           <div>
             <h2>${escapeHTML(title)}</h2>
@@ -1718,29 +1734,97 @@ function expenseField(id, label, value) {
 }
 
 function renderMeetingModal(item) {
+  const defaultRoom = meetingRooms[0];
+  const defaultTime = "13:00-14:00";
   return modalShell(
     item.name,
-    "创建会议后，后端会触发日程和会议助理，自动处理会议室、参会人日程和会后事项。",
+    "选择会议室和时间后创建预定。",
     `
-      <div class="contract-layout">
-        <div class="fake-form expense-form">
-          ${workflowInput("meetingTitle", "会议主题", "合同协作项目反馈会")}
-          ${workflowInput("meetingTime", "会议时间", `${todayInputDate()} 16:00`)}
-          ${workflowInput("meetingRoom", "会议室", "广州总部 A 会议室")}
-          ${workflowInput("meetingParticipants", "参会人", "产品、财务、法务、业务发起人")}
+      <div class="meeting-board">
+        <div class="meeting-toolbar">
+          <div class="meeting-date-nav">
+            <strong>${escapeHTML(meetingDateLabel())}</strong>
+            <button type="button" aria-label="上一天">${uiIcon("chevron-left")}</button>
+            <button type="button" aria-label="下一天">${uiIcon("chevron-right")}</button>
+          </div>
+          <div class="meeting-filters">
+            <button type="button">不限时间段 ${uiIcon("chevron-down")}</button>
+            <button type="button">更多筛选 ${uiIcon("chevron-down")}</button>
+          </div>
+          <button class="meeting-bookings" type="button">${uiIcon("meeting")} 我的预定</button>
         </div>
-        ${workflowTextarea("meetingPurpose", "会议目的", "确认合同项目中的产品、财务、法务反馈，沉淀会后待办。")}
-        <div class="contract-process-note">
-          <strong>后端事件</strong>
-          <span>创建会议 -> 日程和会议助理 -> 自动协调会议室、纪要和会后事项。</span>
+
+        <div class="meeting-room-list">
+          ${meetingRooms.map((room, index) => renderMeetingRoomRow(room, index)).join("")}
         </div>
+
+        <div class="meeting-reserve-strip">
+          <div>
+            <span>当前选择</span>
+            <strong id="meetingSelectionText">${escapeHTML(defaultRoom.name)} · ${escapeHTML(defaultTime)}</strong>
+          </div>
+          <label>
+            <span>会议主题</span>
+            <input id="meetingTitle" value="内部会议" />
+          </label>
+          <label>
+            <span>参会人</span>
+            <input id="meetingParticipants" value="相关同事" />
+          </label>
+        </div>
+
+        <input type="hidden" id="meetingTime" value="${escapeHTML(`${todayInputDate()} ${defaultTime}`)}" />
+        <input type="hidden" id="meetingRoom" value="${escapeHTML(defaultRoom.name)}" />
+        <input type="hidden" id="meetingPurpose" value="会议室预订" />
       </div>
     `,
     `
       <button class="ghost-btn" data-modal-close>取消</button>
-      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">创建会议</button>
-    `
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">预定会议室</button>
+    `,
+    "meeting-room-modal"
   );
+}
+
+function meetingDateLabel() {
+  const parts = beijingDateParts();
+  return `${Number(parts.month)}月${Number(parts.day)}日(今天)`;
+}
+
+function renderMeetingRoomRow(room, roomIndex) {
+  return `
+    <section class="meeting-room-row">
+      <div class="meeting-room-meta">
+        <strong>${escapeHTML(room.name)}</strong>
+        <span>${escapeHTML(room.capacity)} <em>|</em> ${escapeHTML(room.equipment)}</span>
+      </div>
+      <div class="meeting-timeline">
+        <div class="meeting-slots">
+          ${Array.from({ length: 24 }, (_, hour) => renderMeetingSlot(room, roomIndex, hour)).join("")}
+        </div>
+        <div class="meeting-hours">
+          ${Array.from({ length: 25 }, (_, hour) => `<span>${hour}</span>`).join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderMeetingSlot(room, roomIndex, hour) {
+  const booked = room.bookings.some(([start, end]) => hour >= Math.floor(start) && hour < Math.ceil(end));
+  const selected = roomIndex === 0 && hour === 13;
+  return `
+    <button
+      class="meeting-slot ${booked ? "booked" : ""} ${selected ? "selected" : ""}"
+      type="button"
+      ${booked ? "disabled" : ""}
+      data-meeting-slot
+      data-room="${escapeHTML(room.name)}"
+      data-start="${String(hour).padStart(2, "0")}:00"
+      data-end="${String(hour + 1).padStart(2, "0")}:00"
+      aria-label="${escapeHTML(room.name)} ${hour}:00-${hour + 1}:00"
+    ></button>
+  `;
 }
 
 function renderDailyReportModal(item) {
@@ -2678,6 +2762,10 @@ function bindViewEvents() {
     });
   });
 
+  document.querySelectorAll("[data-meeting-slot]").forEach((button) => {
+    button.addEventListener("click", () => selectMeetingSlot(button));
+  });
+
   document.querySelectorAll("[data-skill-change]").forEach((button) => {
     button.addEventListener("click", () => {
       document.getElementById(`skillUpload-${button.dataset.skillChange}`)?.click();
@@ -2777,6 +2865,22 @@ function bindViewEvents() {
   if (aiButton) aiButton.addEventListener("click", handleAI);
 
   bindHomeClock();
+}
+
+function selectMeetingSlot(button) {
+  if (button.disabled) return;
+  document.querySelectorAll("[data-meeting-slot].selected").forEach((item) => item.classList.remove("selected"));
+  button.classList.add("selected");
+  const room = button.dataset.room || "默认会议室";
+  const timeRange = `${button.dataset.start}-${button.dataset.end}`;
+  const meetingRoom = document.getElementById("meetingRoom");
+  const meetingTime = document.getElementById("meetingTime");
+  const meetingPurpose = document.getElementById("meetingPurpose");
+  const selectionText = document.getElementById("meetingSelectionText");
+  if (meetingRoom) meetingRoom.value = room;
+  if (meetingTime) meetingTime.value = `${todayInputDate()} ${timeRange}`;
+  if (meetingPurpose) meetingPurpose.value = `${room} 预订：${timeRange}`;
+  if (selectionText) selectionText.textContent = `${room} · ${timeRange}`;
 }
 
 function bindHomeClock() {
