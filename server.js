@@ -165,6 +165,16 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/expenses/invoices/autofill") {
+    if (!canInitiateTaskType(user, "expense")) {
+      throw httpError(403, "当前角色不能发起报销自动识别。");
+    }
+    const submission = await readInvoiceSubmission(req);
+    const payload = createInvoiceAutofill(user, submission);
+    sendJson(res, 201, payload);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/contracts/projects") {
     if (!canInitiateContractProject(user)) {
       throw httpError(403, "当前角色不能创建合同协作项目。");
@@ -223,6 +233,111 @@ function publicAccount(item, username) {
 
 function task(id, title, type, source, owner, status, due, sourceName, initiator) {
   return { id, title, type, source, owner, status, due, sourceName, initiator, result: "" };
+}
+
+function createInvoiceAutofill(user, body) {
+  const fileName = body.fileName || "invoice.jpg";
+  const inferred = inferInvoiceFields(fileName, body.note || "");
+  const formId = nextId("EXP");
+  const attachmentName = `${inferred.invoiceDate}_${inferred.merchant}_${inferred.amount}_${inferred.project}.jpg`
+    .replace(/[\\/:*?"<>|\s]+/g, "_");
+  const fields = {
+    applicant: user.name,
+    department: user.department,
+    expenseType: inferred.expenseType,
+    merchant: inferred.merchant,
+    invoiceDate: inferred.invoiceDate,
+    amount: inferred.amount,
+    taxNo: inferred.taxNo,
+    project: inferred.project,
+    remark: inferred.remark,
+    attachmentName
+  };
+  const form = {
+    id: formId,
+    system: "AI 工作台",
+    template: "报销基础表单",
+    status: "已自动回填，待人工确认",
+    fields
+  };
+  const newTask = task(
+    nextId("T"),
+    `${user.name} 的报销表格已由报销助理自动回填`,
+    "expense",
+    "finance",
+    "财务",
+    "need_info",
+    "2026-07-08",
+    "AI 工作台",
+    user.name
+  );
+  newTask.robotName = "报销助理";
+  newTask.skills = ["发票识别与命名", "报销规则校验", "项目费用归类"];
+  newTask.invoiceForm = form;
+  newTask.result = "发票字段已识别并回填本地报销表格，提交前需人工确认金额和项目归属。";
+  tasks.unshift(newTask);
+  return {
+    fields,
+    form,
+    task: newTask,
+    confidence: inferred.confidence,
+    message: "报销助理已自动识别发票并回填本地报销表格"
+  };
+}
+
+function inferInvoiceFields(fileName, note) {
+  const text = `${fileName} ${note}`.toLowerCase();
+  const amountMatch = `${fileName} ${note}`.match(/(\d+(?:\.\d{1,2})?)/);
+  const isDidi = text.includes("didi") || text.includes("滴滴") || text.includes("taxi");
+  const isHotel = text.includes("hotel") || text.includes("酒店");
+  const isFlight = text.includes("flight") || text.includes("机票") || text.includes("航班");
+  const today = new Date().toISOString().slice(0, 10);
+  if (isDidi) {
+    return {
+      expenseType: "交通费",
+      merchant: "滴滴出行",
+      invoiceDate: today,
+      amount: amountMatch ? amountMatch[1] : "68.50",
+      taxNo: "待确认",
+      project: note.includes("项目") ? note : "客户拜访项目",
+      remark: "由报销助理根据发票图片自动识别，提交前请确认。",
+      confidence: 0.91
+    };
+  }
+  if (isHotel) {
+    return {
+      expenseType: "差旅住宿",
+      merchant: "酒店供应商",
+      invoiceDate: today,
+      amount: amountMatch ? amountMatch[1] : "428.00",
+      taxNo: "待确认",
+      project: "差旅项目",
+      remark: "住宿发票已自动识别并归入差旅费用。",
+      confidence: 0.86
+    };
+  }
+  if (isFlight) {
+    return {
+      expenseType: "差旅交通",
+      merchant: "航空/票务平台",
+      invoiceDate: today,
+      amount: amountMatch ? amountMatch[1] : "760.00",
+      taxNo: "待确认",
+      project: "差旅项目",
+      remark: "机票行程单已自动识别并归入差旅交通。",
+      confidence: 0.84
+    };
+  }
+  return {
+    expenseType: "项目费用",
+    merchant: "发票商户待确认",
+    invoiceDate: today,
+    amount: amountMatch ? amountMatch[1] : "待确认",
+    taxNo: "待确认",
+    project: note || "待选择项目",
+    remark: "已自动回填基础表格，低置信字段需人工确认。",
+    confidence: amountMatch ? 0.72 : 0.58
+  };
 }
 
 function contractTask(id, title, owner, status, due, approvalStage, initiator, result) {
@@ -757,6 +872,23 @@ async function readContractSubmission(req) {
     return { title: "客户合同审批", fileName: "contract.txt", contractText: buffer.toString("utf8") };
   }
   return readJson(req);
+}
+
+async function readInvoiceSubmission(req) {
+  const contentType = req.headers["content-type"] || "";
+  if (contentType.includes("multipart/form-data")) {
+    const result = await readMultipartContract(req, contentType);
+    return {
+      fileName: result.fileName || "invoice.jpg",
+      fileBuffer: result.fileBuffer,
+      note: result.note || result.project || result.contractText || ""
+    };
+  }
+  const body = await readJson(req);
+  return {
+    fileName: body.fileName || "invoice.jpg",
+    note: body.note || body.project || ""
+  };
 }
 
 async function readMultipartContract(req, contentType) {

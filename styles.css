@@ -2341,6 +2341,25 @@ h3 {
   text-align: right;
 }
 
+.expense-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.expense-field {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.expense-field input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+}
+
 .contract-layout {
   display: grid;
   gap: 14px;

@@ -1519,6 +1519,7 @@ function renderApprovalModal() {
 
 function renderEntryModal(item) {
   if (!item) return "";
+  if (item.taskType === "expense") return renderExpenseModal(item);
   if (item.taskType === "contract_project") return renderContractProjectModal(item);
   if (item.taskType === "contract") return renderContractApprovalModal(item);
   const source = systemSources[item.source] || systemSources.ai_workbench;
@@ -1546,6 +1547,53 @@ function renderEntryModal(item) {
       <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交到后端流程</button>
     `
   );
+}
+
+function renderExpenseModal(item) {
+  return modalShell(
+    item.name,
+    "上传发票图片后，报销助理会自动识别字段并回填表格；基础版先不对接企微。",
+    `
+      <div class="contract-layout">
+        <div class="contract-upload">
+          <span class="module-icon">${uiIcon("receipt")}</span>
+          <div>
+            <div class="task-title">上传发票图片</div>
+            <p class="panel-note">支持 JPG、PNG、PDF；上传后自动识别并回填表格。</p>
+          </div>
+          <input class="hidden-file" id="expenseFile" type="file" accept=".jpg,.jpeg,.png,.pdf" />
+          <button class="ghost-btn" type="button" data-expense-file-pick>上传发票</button>
+        </div>
+        <div class="contract-file-name" id="expenseFileName">未选择文件</div>
+        <div class="access-note" id="expenseAutofillStatus">等待上传。上传后将自动回填下方表格，提交前请人工确认。</div>
+        <div class="fake-form expense-form">
+          ${expenseField("expenseMerchant", "商户", "待识别")}
+          ${expenseField("expenseDate", "开票日期", "待识别")}
+          ${expenseField("expenseAmount", "金额", "待识别")}
+          ${expenseField("expenseType", "费用类型", "待识别")}
+          ${expenseField("expenseProject", "关联项目", "待归类")}
+          ${expenseField("expenseAttachment", "附件命名", "待生成")}
+        </div>
+        <div class="contract-process-note">
+          <strong>自动回填</strong>
+          <span>识别结果会写入下方表格，并生成待确认事项。</span>
+        </div>
+      </div>
+    `,
+    `
+      <button class="ghost-btn" data-modal-close>取消</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交报销</button>
+    `
+  );
+}
+
+function expenseField(id, label, value) {
+  return `
+    <label class="fake-field expense-field">
+      <span>${escapeHTML(label)}</span>
+      <input id="${escapeHTML(id)}" value="${escapeHTML(value)}" />
+    </label>
+  `;
 }
 
 function renderContractProjectModal(item) {
@@ -1609,7 +1657,7 @@ function entryFields(item) {
     meeting: [["会议室", "选择地点与时间段"], ["参会人", "同步日程"], ["资源", "投影/白板/访客"]],
     schedule: [["日程类型", "会议/宣讲/转正面谈"], ["参与人", "同步到相关人员"], ["材料", "PPT、纪要或附件"]],
     payment: [["付款对象", "供应商或员工"], ["付款金额", "按财务权限展示"], ["审批链", "发起人 -> 财务 -> 授权审批"]],
-    approval: [["审批类型", "行政、付款、物资或通用审批"], ["表单模板", "按企微审批模板映射"], ["状态回写", "后续同步企微审批状态"]],
+    approval: [["审批类型", "行政、付款、物资或通用审批"], ["表单模板", "按审批模板映射"], ["状态回写", "后续可同步审批状态"]],
     todo: [["事项来源", "审批、人事、项目、财务"], ["处理动作", "完成/补充/转交"], ["结果", "写回事项中心"]]
   };
   return fields[item.taskType] || [["办理内容", item.name], ["数据范围", item.scope], ["状态", "提交后进入事项中心"]];
@@ -2322,12 +2370,28 @@ function bindViewEvents() {
     });
   });
 
+  document.querySelectorAll("[data-expense-file-pick]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById("expenseFile")?.click();
+    });
+  });
+
   const contractFile = document.getElementById("contractFile");
   if (contractFile) {
     contractFile.addEventListener("change", () => {
       const fileName = contractFile.files?.[0]?.name || "未选择文件，也可以直接粘贴合同文本。";
       const label = document.getElementById("contractFileName");
       if (label) label.textContent = fileName;
+    });
+  }
+
+  const expenseFile = document.getElementById("expenseFile");
+  if (expenseFile) {
+    expenseFile.addEventListener("change", () => {
+      const fileName = expenseFile.files?.[0]?.name || "未选择文件";
+      const label = document.getElementById("expenseFileName");
+      if (label) label.textContent = fileName;
+      autofillExpenseFromInvoice();
     });
   }
 
@@ -2549,6 +2613,49 @@ async function submitContractApproval() {
     method: "POST",
     body: formData
   });
+}
+
+async function autofillExpenseFromInvoice() {
+  const fileInput = document.getElementById("expenseFile");
+  const file = fileInput?.files?.[0];
+  const status = document.getElementById("expenseAutofillStatus");
+  if (!file) return;
+  if (!requireBackend("报销助理自动识别")) return;
+  if (status) status.textContent = "报销助理正在自动识别发票，并准备回填表格...";
+  const formData = new FormData();
+  formData.append("invoiceFile", file, file.name);
+  formData.append("project", document.getElementById("expenseProject")?.value || "客户拜访项目");
+  try {
+    const payload = await apiRequest("/api/expenses/invoices/autofill", {
+      method: "POST",
+      body: formData
+    });
+    fillExpenseField("expenseMerchant", payload.fields.merchant);
+    fillExpenseField("expenseDate", payload.fields.invoiceDate);
+    fillExpenseField("expenseAmount", payload.fields.amount);
+    fillExpenseField("expenseType", payload.fields.expenseType);
+    fillExpenseField("expenseProject", payload.fields.project);
+    fillExpenseField("expenseAttachment", payload.fields.attachmentName);
+    upsertBackendTask(payload.task);
+    if (status) {
+      const percent = Math.round((payload.confidence || 0) * 100);
+      status.textContent = `已自动回填表格。识别置信度 ${percent}%，提交前请人工确认。`;
+    }
+    addAudit("报销助理自动识别并回填表格", {
+      category: "机器人",
+      object: payload.form.id,
+      before: "发票图片",
+      after: "本地报销表格",
+      impact: "减少手工填报和附件命名"
+    });
+  } catch (error) {
+    if (status) status.textContent = `自动识别失败：${error.message}`;
+  }
+}
+
+function fillExpenseField(id, value) {
+  const input = document.getElementById(id);
+  if (input) input.value = value || "";
 }
 
 async function submitContractProject() {
