@@ -102,7 +102,6 @@ let tasks = [
   task("T-1006", "员工月度工作量化低于阈值，请确认是否偏离计划", "work_deviation", "hr", "主管", "pending", "2026-07-06", "AI 工作台", "系统"),
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限", "系统"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统", "系统"),
-  contractProjectTask("T-1004", "客户合同协作项目已创建，待产品/财务/法务反馈", "合同项目组", "processing", "2026-07-04", "collaboration", "员工", "AI 已写入风险备注，正式审批将在反馈确认后自动发起。", contractProjects[0]),
   task("T-1008", "合同归档风险意见复核", "legal", "legal", "法务接口人", "pending", "2026-07-05", "法务系统", "系统"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具", "系统")
 ];

@@ -458,6 +458,7 @@ const approvalEntries = [
   entry("reimburse", "报销", "财务/企微", "wecom", "BX", "expense", "本人申请；财务看全部"),
   entry("leave", "请假", "企微审批", "wecom", "QJ", "leave", "本人申请；主管看团队"),
   entry("contract-approval", "合同协作项目", "项目/法务", "project", "HT", "contract_project", "创建项目组并沉淀反馈"),
+  entry("permission", "权限申请", "企微审批", "wecom", "QX", "permission", "本人申请；主管处理"),
   entry("field", "外勤", "企微审批", "wecom", "WQ", "field", "本人申请；主管/HR 查看"),
   entry("travel", "出差", "企微审批", "wecom", "CC", "travel", "本人申请；财务看费用"),
   entry("punch-fix", "补卡", "企微审批", "wecom", "BK", "attendance", "本人申请；主管/HR 查看"),
@@ -468,7 +469,6 @@ const approvalEntries = [
 const commonEntries = [
   entry("approval-center", "审批中心", "企微审批", "wecom", "SP", "approval_center", "请假/报销/外勤/出差等统一入口"),
   entry("meeting-room", "会议室", "企微应用", "wecom", "HY", "meeting", "会议室预订与占用"),
-  entry("permission", "权限申请", "AI 工作台", "ai_workbench", "QX", "permission", "本人申请；主管处理"),
   entry("schedule", "日程", "企微日程", "wecom", "RC", "schedule", "会议/宣讲/面谈安排"),
   entry("daily-report", "日报周报", "AI 工作台", "ai_workbench", "RB", "daily_report", "本人提交；主管看团队异常"),
   entry("my-approval", "我的审批", "企微审批", "wecom", "SP", "approval", "当前用户待审批"),
@@ -531,7 +531,6 @@ let tasks = [
   task("T-1006", "员工月度工作量化低于阈值，请确认是否偏离计划", "work_deviation", "hr", "主管", "pending", "2026-07-06", "AI 工作台"),
   task("T-1007", "员工从销售支持组转入产品组，需完成权限交接", "org_change", "hr", "总助", "pending", "2026-07-06", "组织权限"),
   task("T-1003", "滴滴发票报销归入校园招聘项目", "expense", "finance", "财务", "need_info", "2026-07-03", "财务系统"),
-  contractProjectTask("T-1004", "客户合同协作项目已创建，待产品/财务/法务反馈", "合同项目组", "processing", "2026-07-04", "collaboration", "员工", "AI 已写入风险备注，正式审批将在反馈确认后自动发起。", sampleContractProject()),
   task("T-1008", "合同归档风险意见复核", "legal", "legal", "法务接口人", "pending", "2026-07-05", "法务系统"),
   task("T-1005", "CPD 岗位人才画像和胜任力模型", "recruiting", "recruiting", "HR", "processing", "2026-07-10", "招聘工具")
 ];
@@ -1289,7 +1288,6 @@ function homeQuickItems(user) {
     employee: [
       base.tasks,
       base.approvals,
-      quickFromEntry("contract-approval", "violet"),
       base.permission,
       base.schedule,
       base.daily,
@@ -1303,7 +1301,6 @@ function homeQuickItems(user) {
       quickFromEntry("work-deviation", "violet"),
       quickFromEntry("project-progress", "mint"),
       quickFromEntry("handover", "blue"),
-      quickFromEntry("contract-approval", "violet"),
       base.daily,
       base.approvals,
       base.org
@@ -1385,8 +1382,8 @@ function timeGreeting() {
 
 function recentItemsForUser(user) {
   const idsByRole = {
-    employee: ["approval-center", "contract-approval", "permission", "my-projects"],
-    manager: ["team-todo", "contract-approval", "work-deviation", "project-progress"],
+    employee: ["approval-center", "permission", "my-projects"],
+    manager: ["team-todo", "work-deviation", "project-progress"],
     hr: ["onboard", "probation", "transfer", "recruiting-flow"],
     finance: ["expense-review", "invoice", "payment", "cost-class"],
     legal: ["legal-risk", "contract-archive", "contract-template", "continuous-risk"],
@@ -1627,14 +1624,13 @@ function renderApprovalModal() {
   const visibleApprovalEntries = approvalEntries.filter((item) => canInitiateEntry(state.user, item));
   return modalShell(
     "审批中心",
-    "通用审批只保留一个入口，进入后按当前账号权限展示可发起的页面。",
+    "按当前账号权限展示可发起的审批页面。",
     `
       ${visibleApprovalEntries.length ? `
         <div class="module-grid modal-grid">
           ${visibleApprovalEntries.map((item) => moduleCard(item, true)).join("")}
         </div>
       ` : `<div class="access-note">当前账号没有可发起的审批，只能在事项中心处理已流转到你的待办。</div>`}
-      <div class="access-note">正式版本可以对接企微审批模板；Demo 先用弹窗展示二级页面，并把提交动作沉淀为事项卡。</div>
     `
   );
 }
@@ -1646,6 +1642,7 @@ function renderEntryModal(item) {
   if (item.taskType === "daily_report") return renderDailyReportModal(item);
   if (item.taskType === "contract_project") return renderContractProjectModal(item);
   if (item.taskType === "contract") return renderContractApprovalModal(item);
+  if (item.taskType === "permission") return renderPermissionApplicationModal(item);
   const source = systemSources[item.source] || systemSources.ai_workbench;
   return modalShell(
     item.name,
@@ -1791,7 +1788,7 @@ function workflowTextarea(id, label, value) {
 function renderContractProjectModal(item) {
   return modalShell(
     item.name,
-    "先创建合同项目组，沉淀产品、财务、法务反馈；反馈确认后再自动发起正式审批。",
+    "上传合同或邮件材料后，系统会先做 AI 风险分析，并生成部门反馈事项。",
     `
       <div class="contract-layout">
         <div class="contract-upload">
@@ -1809,20 +1806,6 @@ function renderContractProjectModal(item) {
           <span>合同/沟通摘要</span>
           <textarea id="contractText" placeholder="可选：粘贴合同条款、邮件沟通摘要或对方反馈，系统会生成项目组风险备注。"></textarea>
         </label>
-
-        <div class="contract-process-note">
-          <strong>提交后创建项目组</strong>
-          <span>系统会生成 AI 风险备注、部门反馈事项、过程记录，并在反馈确认后发起正式审批。</span>
-        </div>
-
-        <div class="approval-chain">
-          ${contractProjectStages.map((step, index) => `
-            <div class="chain-step">
-              <span>${String(index + 1).padStart(2, "0")}</span>
-              <strong>${escapeHTML(step.label)}</strong>
-            </div>
-          `).join("")}
-        </div>
       </div>
     `,
     `
@@ -1834,6 +1817,66 @@ function renderContractProjectModal(item) {
 
 function renderContractApprovalModal(item) {
   return renderContractProjectModal(item);
+}
+
+function renderPermissionApplicationModal(item) {
+  return modalShell(
+    item.name,
+    "按业务审批提交；本人申请，主管处理。",
+    `
+      <div class="permission-approval-form">
+        <label class="permission-form-row">
+          <span><em>*</em> 系统类型</span>
+          <select id="permissionSystem">
+            <option>请选择</option>
+            <option>业务系统/portal</option>
+            <option>ERP系统</option>
+            <option>WMS系统</option>
+            <option>BI系统</option>
+          </select>
+        </label>
+        <label class="permission-form-row">
+          <span><em>*</em> 申请理由</span>
+          <textarea id="permissionReason" placeholder="请填写项目、调岗、新增职责或临时协作原因"></textarea>
+        </label>
+        <label class="permission-form-row">
+          <span>申请权限</span>
+          <textarea id="permissionScope" placeholder="请描述需要开通的具体页面、菜单、数据范围或项目权限"></textarea>
+        </label>
+        <div class="permission-form-row inline">
+          <span>附件</span>
+          <button class="ghost-btn" type="button">添加附件</button>
+          <small>需开通的系统权限界面或主管确认材料</small>
+        </div>
+        <div class="permission-flow">
+          <h3>审批流程 <small>由管理员预设，不可修改审批人</small></h3>
+          <div class="approval-timeline">
+            ${approvalStage("指定上级", ["直属主管"])}
+            ${approvalStage("审批人", ["系统管理员"])}
+            ${approvalStage("抄送人", ["总助", "权限审计"])}
+          </div>
+        </div>
+      </div>
+    `,
+    `
+      <button class="ghost-btn" data-modal-close>取消</button>
+      <button class="primary-btn" data-submit-entry="${escapeHTML(item.id)}">提交</button>
+    `
+  );
+}
+
+function approvalStage(title, people) {
+  return `
+    <div class="approval-stage">
+      <span class="approval-dot">${uiIcon("approval")}</span>
+      <div>
+        <strong>${escapeHTML(title)}</strong>
+        <div class="approver-list">
+          ${people.map((name) => `<span class="approver-chip">${escapeHTML(name)}</span>`).join("")}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function entryFields(item) {
@@ -2151,7 +2194,6 @@ function renderTaskRow(item) {
           <button class="small-btn" data-need="${item.id}">需补充</button>
         `}
       </div>
-      ${item.contractProject ? renderContractProjectPanel(item.contractProject) : ""}
       ${item.analysis ? renderContractAnalysis(item.analysis) : ""}
     </div>
   `;
@@ -2887,6 +2929,8 @@ async function submitEntryWorkflow(item) {
       payload = await submitMeeting();
     } else if (item.taskType === "daily_report") {
       payload = await submitDailyReport();
+    } else if (item.taskType === "permission") {
+      payload = await submitPermissionApplication(item, source);
     } else {
       payload = await apiRequest("/api/tasks", {
         method: "POST",
@@ -2974,6 +3018,27 @@ async function submitDailyReport() {
       plan: document.getElementById("dailyPlan")?.value.trim() || "明日计划待补充"
     })
   });
+}
+
+async function submitPermissionApplication(item, source) {
+  const systemType = document.getElementById("permissionSystem")?.value || "未选择系统";
+  const reason = document.getElementById("permissionReason")?.value.trim() || "未填写申请理由";
+  const scope = document.getElementById("permissionScope")?.value.trim() || "未填写具体权限";
+  const payload = await apiRequest("/api/tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      entryId: item.id,
+      title: `${state.user.name} 申请：${systemType} 权限`,
+      type: item.taskType,
+      source: item.source,
+      sourceName: source.name,
+      fields: { systemType, reason, scope }
+    })
+  });
+  if (payload.task) {
+    payload.task.result = `申请理由：${reason}；申请权限：${scope}`;
+  }
+  return payload;
 }
 
 async function autofillExpenseFromInvoice() {
