@@ -824,13 +824,14 @@ function visibleTasks(user) {
 function canSeeTask(user, item) {
   if (item.type === "contract_project") return canSeeContractProjectTask(user, item);
   if (isContractApprovalTask(item)) return canSeeContractTask(user, item);
+  if (item.owner === user.name || item.initiator === user.name || item.initiator === user.username) return true;
   if (user.role === "boss") return true;
   if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
   if (user.role === "finance") return item.source === "finance" || item.type === "expense";
   if (user.role === "legal") return item.source === "legal" || ["legal", "risk"].includes(item.type);
   if (user.role === "hr") return ["hr", "recruiting"].includes(item.source) || ["probation", "onboard", "transfer"].includes(item.type);
-  if (user.role === "manager") return ["project", "hr", "ai_workbench"].includes(item.source);
-  return ["finance", "ai_workbench"].includes(item.source) || item.initiator === user.name;
+  if (user.role === "manager") return ["project", "hr"].includes(item.source);
+  return item.source === "finance";
 }
 
 function isContractApprovalTask(item) {
@@ -3165,6 +3166,7 @@ async function submitEntryWorkflow(item) {
     }
     upsertBackendTask(payload.task, payload.analysis);
     if (payload.reminderTask) upsertBackendTask(payload.reminderTask);
+    (payload.participantTasks || []).forEach((taskItem) => upsertBackendTask(taskItem));
     recordAutomationEvent(payload.automationEvent);
     addAudit("提交后端流程", {
       category: "接口",

@@ -939,6 +939,7 @@ function createMeetingWorkflow(user, body) {
       `会议记录：${meeting.id}`,
       `我的待办：${newTask.id}`,
       `会议室：${room}`,
+      ...meetingInvitees(participants, user).map((item) => `提醒账号：${item.name}`),
       "日程邀请待同步",
       "会后纪要事项已预置"
     ],
@@ -949,13 +950,50 @@ function createMeetingWorkflow(user, body) {
     }
   });
   attachAutomationEvent(newTask, automationEvent);
-  tasks.unshift(newTask);
+  const participantTasks = meetingInvitees(participants, user).map((invitee) => meetingInviteTask(invitee, user, meeting, automationEvent));
+  tasks.unshift(...participantTasks, newTask);
   return {
     meeting,
     task: newTask,
+    participantTasks,
     automationEvent: publicAutomationEvent(automationEvent),
     message: "会议已创建，日程和会议助理已自动介入"
   };
+}
+
+function meetingInvitees(participants, organizer) {
+  const text = String(participants || "");
+  const seen = new Set([organizer.name, organizer.username]);
+  return Object.entries(accounts)
+    .map(([username, accountItem]) => ({ username, ...publicAccount(accountItem, username) }))
+    .filter((accountItem) => {
+      if (seen.has(accountItem.name) || seen.has(accountItem.username)) return false;
+      const matched = [accountItem.name, accountItem.username, accountItem.roleName]
+        .filter(Boolean)
+        .some((keyword) => text.includes(keyword));
+      if (matched) seen.add(accountItem.name);
+      return matched;
+    });
+}
+
+function meetingInviteTask(invitee, organizer, meeting, automationEvent) {
+  const inviteTask = task(
+    nextId("T"),
+    `会议邀请：${meeting.title}`,
+    "meeting",
+    "ai_workbench",
+    invitee.name,
+    "pending",
+    todayDate(),
+    "AI 工作台",
+    invitee.name
+  );
+  inviteTask.meeting = meeting;
+  inviteTask.result = `${organizer.name} 邀请你参加 ${meeting.room} ${meeting.meetingTime} 的会议。`;
+  inviteTask.invitedAccount = invitee.username;
+  inviteTask.invitedBy = organizer.name;
+  attachAutomationEvent(inviteTask, automationEvent);
+  return inviteTask;
 }
 
 function createDailyReportWorkflow(user, body) {
@@ -1547,13 +1585,14 @@ function canSeeTask(user, item) {
   if (!item) return false;
   if (item.type === "contract_project") return canSeeContractProjectTask(user, item);
   if (item.type === "contract" || item.approvalStage) return canSeeContractTask(user, item);
+  if (item.owner === user.name || item.initiator === user.name || item.initiator === user.username) return true;
   if (user.role === "boss") return true;
   if (user.role === "assistant") return ["org_change", "handover"].includes(item.type) || ["hr", "project", "ai_workbench"].includes(item.source);
   if (user.role === "finance") return item.source === "finance" || item.type === "expense";
   if (user.role === "legal") return item.source === "legal" || ["legal", "risk"].includes(item.type);
   if (user.role === "hr") return ["hr", "recruiting"].includes(item.source) || ["probation", "onboard", "transfer"].includes(item.type);
-  if (user.role === "manager") return ["project", "hr", "ai_workbench"].includes(item.source) || item.approvalStage === "mentor_review";
-  return ["finance", "ai_workbench"].includes(item.source) || item.initiator === user.name;
+  if (user.role === "manager") return ["project", "hr"].includes(item.source) || item.approvalStage === "mentor_review";
+  return item.source === "finance";
 }
 
 function canSeeContractTask(user, item) {
