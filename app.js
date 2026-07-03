@@ -42,6 +42,8 @@ const state = {
   ]
 };
 
+let clockInterval = null;
+
 const systemSources = {
   wecom: { name: "企微", mode: "link" },
   finance: { name: "财务系统", mode: "mock" },
@@ -1179,6 +1181,7 @@ function renderWorkbench() {
     });
   });
   document.getElementById("logoutBtn").addEventListener("click", () => {
+    stopHomeClock();
     state.user = null;
     state.view = "home";
     render();
@@ -1234,46 +1237,39 @@ function homeView() {
   const user = state.user;
   const quickItems = homeQuickItems(user);
   const recentItems = recentItemsForUser(user);
+  const primaryItems = quickItems.slice(0, 8);
+  const secondaryItems = quickItems.slice(8);
   return `
-    <div class="reference-home">
-      <section class="welcome-zone">
-        <h1>您好，欢迎使用 AI 工作台 <span>👋</span></h1>
-        <p>用统一工作台承接企微能力、岗位入口和组织权限，让每一次工作都有记录、有流转、有结果。</p>
-        <label class="home-search">
+    <div class="reference-home home-dashboard">
+      <section class="work-brief">
+        <div>
+          <span class="eyebrow">Today</span>
+          <h1>${escapeHTML(timeGreeting())}，${escapeHTML(user.name)}</h1>
+          <p>${escapeHTML(user.position)} · ${escapeHTML(user.department)} · ${escapeHTML(user.scope)}</p>
+        </div>
+        <label class="home-search compact">
           ${uiIcon("search")}
-          <input aria-label="搜索应用" placeholder="搜索应用、功能或事项..." />
+          <input aria-label="搜索应用" placeholder="搜索功能或事项" />
           <kbd>⌘K</kbd>
         </label>
       </section>
 
-      <section class="quick-panel">
-        <h2>快速访问</h2>
-        <div class="feature-grid">
-          ${quickItems.map(featureCard).join("")}
+      <section class="home-command">
+        <div class="command-main">
+          <div class="reference-section-head">
+            <h2>常用功能</h2>
+            <button class="chip-btn" data-view="tasks">事项中心</button>
+          </div>
+          <div class="feature-grid home-command-grid">
+            ${primaryItems.map(featureCard).join("")}
+          </div>
+          <div class="mini-recent">
+            <span>最近</span>
+            ${recentItems.slice(0, 4).map(recentPill).join("")}
+            ${secondaryItems.map(secondaryPill).join("")}
+          </div>
         </div>
-      </section>
-
-      <section class="ai-banner">
-        <div>
-          <h2>统一工作台，连接组织与权限</h2>
-          <p>入口像企微一样简单，后台按组织架构、岗位角色和审批链路决定每个人能看什么、办什么。</p>
-          <button class="primary-btn" data-view="org">查看组织架构</button>
-        </div>
-        <div class="banner-device" aria-hidden="true">
-          <span></span>
-          <i></i>
-          <b>AI</b>
-        </div>
-      </section>
-
-      <section class="recent-panel">
-        <div class="reference-section-head">
-          <h2>最近使用</h2>
-          <button class="chip-btn" data-view="tasks">查看全部</button>
-        </div>
-        <div class="recent-grid">
-          ${recentItems.map(recentCard).join("")}
-        </div>
+        ${homeClockCard()}
       </section>
     </div>
   `;
@@ -1378,6 +1374,15 @@ function quickFromEntry(id, tone = "blue") {
   };
 }
 
+function timeGreeting() {
+  const hour = Number(beijingDateParts().hour);
+  if (hour < 6) return "夜间好";
+  if (hour < 11) return "早上好";
+  if (hour < 14) return "中午好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
+}
+
 function recentItemsForUser(user) {
   const idsByRole = {
     employee: ["approval-center", "contract-approval", "permission", "my-projects"],
@@ -1394,6 +1399,60 @@ function recentItemsForUser(user) {
     .filter((item) => canAccessEntry(user, item));
 }
 
+function homeClockCard() {
+  const parts = beijingDateParts();
+  return `
+    <aside class="beijing-clock" aria-label="北京时间">
+      <div class="beijing-clock-date" data-clock-date>${escapeHTML(formatBeijingDate(parts))}</div>
+      <div class="flip-clock" aria-live="polite">
+        ${flipUnit("hour", parts.hour, "HRS")}
+        <b>:</b>
+        ${flipUnit("minute", parts.minute, "MIN")}
+        <b>:</b>
+        ${flipUnit("second", parts.second, "SEC")}
+      </div>
+      <div class="beijing-clock-zone">Beijing Time · UTC+8 自动同步</div>
+    </aside>
+  `;
+}
+
+function flipUnit(part, value, label) {
+  return `
+    <div class="flip-unit">
+      <span data-clock-${escapeHTML(part)}>${escapeHTML(value)}</span>
+      <small>${escapeHTML(label)}</small>
+    </div>
+  `;
+}
+
+function beijingDateParts() {
+  const values = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    weekday: "long"
+  }).formatToParts(new Date());
+  const parts = Object.fromEntries(values.map((item) => [item.type, item.value]));
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    weekday: parts.weekday,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second
+  };
+}
+
+function formatBeijingDate(parts) {
+  return `${parts.weekday}, ${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function featureCard(item) {
   const action = item.kind === "view" ? `data-view="${escapeHTML(item.id)}"` : `data-entry="${escapeHTML(item.id)}"`;
   return `
@@ -1402,6 +1461,26 @@ function featureCard(item) {
       <strong>${escapeHTML(item.title)}</strong>
       <p>${escapeHTML(item.text)}</p>
       <em>${uiIcon("arrow-right")}</em>
+    </button>
+  `;
+}
+
+function recentPill(item) {
+  const action = `data-entry="${escapeHTML(item.id)}"`;
+  return `
+    <button class="recent-pill" ${action}>
+      ${uiIcon(entryIconName(item))}
+      <span>${escapeHTML(item.name)}</span>
+    </button>
+  `;
+}
+
+function secondaryPill(item) {
+  const action = item.kind === "view" ? `data-view="${escapeHTML(item.id)}"` : `data-entry="${escapeHTML(item.id)}"`;
+  return `
+    <button class="recent-pill muted" ${action}>
+      ${uiIcon(item.icon)}
+      <span>${escapeHTML(item.title)}</span>
     </button>
   `;
 }
@@ -2629,6 +2708,33 @@ function bindViewEvents() {
 
   const aiButton = document.getElementById("aiRunBtn");
   if (aiButton) aiButton.addEventListener("click", handleAI);
+
+  bindHomeClock();
+}
+
+function bindHomeClock() {
+  stopHomeClock();
+  if (!document.querySelector("[data-clock-hour]")) return;
+  updateHomeClock();
+  clockInterval = setInterval(updateHomeClock, 1000);
+}
+
+function stopHomeClock() {
+  if (!clockInterval) return;
+  clearInterval(clockInterval);
+  clockInterval = null;
+}
+
+function updateHomeClock() {
+  const parts = beijingDateParts();
+  const hour = document.querySelector("[data-clock-hour]");
+  const minute = document.querySelector("[data-clock-minute]");
+  const second = document.querySelector("[data-clock-second]");
+  const date = document.querySelector("[data-clock-date]");
+  if (hour) hour.textContent = parts.hour;
+  if (minute) minute.textContent = parts.minute;
+  if (second) second.textContent = parts.second;
+  if (date) date.textContent = formatBeijingDate(parts);
 }
 
 function bindPointerGlow() {
@@ -2636,7 +2742,9 @@ function bindPointerGlow() {
     ".topbar",
     ".feature-card",
     ".recent-card",
-    ".ai-banner",
+    ".beijing-clock",
+    ".recent-pill",
+    ".work-brief",
     ".home-hero",
     ".dock-item",
     ".hero-action",
