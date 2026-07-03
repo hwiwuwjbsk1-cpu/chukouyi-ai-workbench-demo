@@ -2370,20 +2370,10 @@ function robotsView() {
     return restrictedView("当前角色无权访问机器人编排。");
   }
   const visibleRobots = robotCatalog;
-  const allSkillIds = Array.from(new Set(visibleRobots.flatMap((item) => item.skills)));
   const rules = state.automationRules.length ? state.automationRules : fallbackAutomationRules;
   return `
     <div class="left-column">
-      <section class="panel">
-        ${panelHead("机器人编排", "业务动作进入后端后，由事件规则自动触发机器人和 Skills；普通员工只看到业务入口和结果。")}
-        <div class="metrics-row">
-          ${metric("机器人", String(visibleRobots.length), "按角色可见")}
-          ${metric("技能", String(allSkillIds.length), "可复用能力")}
-          ${metric("后端事件", String(rules.length), "业务动作触发")}
-          ${metric("最近触发", String(state.automationEvents.length), "接口返回记录")}
-        </div>
-      </section>
-      <section class="panel">
+      <section class="panel compact-governance-panel">
         ${panelHead("后端触发规则", "前端不传机器人指令，只提交业务动作；后端按事件类型决定触发哪个机器人和哪些 Skills。")}
         <div class="event-rule-grid">
           ${rules.map(renderAutomationRule).join("")}
@@ -2408,18 +2398,40 @@ function robotsView() {
 }
 
 function renderAutomationRule(rule) {
-  const skills = (rule.skills || []).map((item) => item.name || item).join(" -> ");
   return `
     <section class="event-rule-card">
       <div class="event-rule-head">
-        <span>${escapeHTML(rule.eventType)}</span>
-        <strong>${escapeHTML(rule.businessAction)}</strong>
+        <div>
+          <span>${escapeHTML(rule.eventType)}</span>
+          <strong>${escapeHTML(rule.businessAction)}</strong>
+        </div>
+        <em>${escapeHTML(rule.robotName)}</em>
       </div>
-      ${permissionFact("触发机器人", rule.robotName)}
-      ${permissionFact("Skills", skills)}
-      ${permissionFact("写回对象", rule.outputTarget)}
-      ${rule.endpoint ? permissionFact("后端接口", rule.endpoint) : ""}
+      <div class="event-rule-meta">
+        <span>${escapeHTML(rule.outputTarget)}</span>
+        ${rule.endpoint ? `<span>${escapeHTML(rule.endpoint)}</span>` : ""}
+      </div>
+      <div class="skill-chip-list">
+        ${(rule.skills || []).map(renderRuleSkillChip).join("")}
+      </div>
     </section>
+  `;
+}
+
+function renderRuleSkillChip(skillItem) {
+  const skillId = skillItem.id || "";
+  const canEdit = Boolean(skillId && state.api.online);
+  return `
+    <div class="skill-chip">
+      <div>
+        <strong>${escapeHTML(skillItem.name || skillItem)}</strong>
+        <span>v${escapeHTML(skillItem.version || "1")} · ${escapeHTML(skillItem.sourceName || "backend")}</span>
+      </div>
+      ${canEdit ? `
+        <button class="skill-change-btn" type="button" data-skill-change="${escapeHTML(skillId)}">替换入口</button>
+        <input class="hidden-file" id="skillUpload-${escapeHTML(skillId)}" type="file" accept=".json,.md,.txt" data-skill-file="${escapeHTML(skillId)}" />
+      ` : ""}
+    </div>
   `;
 }
 
@@ -2624,6 +2636,12 @@ function bindViewEvents() {
     });
   });
 
+  document.querySelectorAll("[data-skill-change]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById(`skillUpload-${button.dataset.skillChange}`)?.click();
+    });
+  });
+
   const contractFile = document.getElementById("contractFile");
   if (contractFile) {
     contractFile.addEventListener("change", () => {
@@ -2642,6 +2660,13 @@ function bindViewEvents() {
       autofillExpenseFromInvoice();
     });
   }
+
+  document.querySelectorAll("[data-skill-file]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (file) uploadSkillFile(input.dataset.skillFile, file);
+    });
+  });
 
   document.querySelectorAll("[data-modal-close]").forEach((button) => {
     button.addEventListener("click", closeModal);
@@ -2735,6 +2760,28 @@ function updateHomeClock() {
   if (minute) minute.textContent = parts.minute;
   if (second) second.textContent = parts.second;
   if (date) date.textContent = formatBeijingDate(parts);
+}
+
+async function uploadSkillFile(skillId, file) {
+  if (!requireBackend("替换 Skill")) return;
+  const formData = new FormData();
+  formData.append("skillFile", file, file.name);
+  try {
+    const payload = await apiRequest(`/api/skills/${encodeURIComponent(skillId)}/upload`, {
+      method: "POST",
+      body: formData
+    });
+    addAudit("替换后端 Skill", {
+      category: "机器人",
+      object: skillId,
+      before: file.name,
+      after: `${payload.skill.name} v${payload.skill.version}`,
+      impact: "后端事件后续会调用新版本 Skill"
+    });
+    await syncAutomationGovernance();
+  } catch (error) {
+    alert(`Skill 替换失败：${error.message}`);
+  }
 }
 
 function bindPointerGlow() {

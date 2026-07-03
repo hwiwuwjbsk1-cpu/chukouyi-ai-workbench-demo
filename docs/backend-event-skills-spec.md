@@ -24,5 +24,9 @@
 - 每个业务动作都有明确后端接口。
 - 每个接口成功后都会生成 `automationEvent`。
 - `automationEvent` 包含：事件类型、业务动作、机器人、Skills、输出对象、任务 ID、触发人、时间。
+- Skills 由后端 `skillRegistry` 管理，包含版本、提示词/规则、输入输出结构、写回对象和更新时间。
+- Skill 上传入口是通用文件入口，但执行函数按 Skill ID 分开，例如 `invoice-ocr`、`contract-risk`、`workload-score` 都有独立 handler。
+- 老板和总助可通过 `POST /api/skills/:id/upload` 上传 `.json/.md/.txt` 替换 Skill，新事件会使用新版本。
+- 每个 Skill 在机器人编排视图都有独立“替换入口”，上传后只替换当前 Skill，不影响其他 Skill。
 - 老板和总助可在机器人编排视图看到后端触发规则和最近事件。
 - 普通员工只看到业务结果和待办，不直接操作 Skills。

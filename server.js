@@ -38,6 +38,22 @@ const eventTriggerRules = {
   "daily_report.submitted": eventRule("提交日报", "report-assistant", "日报周报助理", ["work-summary", "workload-score", "minutes-extract"], "日报量化 / 主管提醒 / 事项中心")
 };
 
+const skillHandlers = {
+  "invoice-ocr": runInvoiceOcrSkill,
+  "expense-policy-check": runExpensePolicyCheckSkill,
+  "project-cost-classify": runProjectCostClassifySkill,
+  "contract-intake": runContractIntakeSkill,
+  "contract-risk": runContractRiskSkill,
+  "contract-group": runContractGroupSkill,
+  "approval-routing": runApprovalRoutingSkill,
+  "lifecycle-monitor": runLifecycleMonitorSkill,
+  "meeting-schedule": runMeetingScheduleSkill,
+  "minutes-extract": runMinutesExtractSkill,
+  "visitor-intake": runVisitorIntakeSkill,
+  "work-summary": runWorkSummarySkill,
+  "workload-score": runWorkloadScoreSkill
+};
+
 const accounts = {
   employee: account("员工", "employee", "普通员工", "产品及运营部", "product", "CPD 专员", "主管", "本人数据"),
   manager: account("主管", "manager", "主管", "产品及运营部", "product", "部门主管", "老板", "本人 + 团队 + 负责项目"),
@@ -166,6 +182,22 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/skills") {
+    if (!canViewAutomationGovernance(user)) throw httpError(403, "当前角色不能查看 Skills。");
+    sendJson(res, 200, { skills: Object.keys(skillRegistry).map((id) => publicSkill(id, true)) });
+    return;
+  }
+
+  const skillUploadMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/upload$/);
+  if (req.method === "POST" && skillUploadMatch) {
+    if (!canViewAutomationGovernance(user)) throw httpError(403, "当前角色不能替换 Skills。");
+    const skillId = decodeURIComponent(skillUploadMatch[1]);
+    const upload = await readSkillUpload(req);
+    const skill = updateSkillDefinition(skillId, user, upload);
+    sendJson(res, 200, { skill: publicSkill(skillId, true), message: `${skill.name} 已更新到 v${skill.version}` });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/automation/events") {
     const visibleEvents = automationEvents
       .filter((item) => canSeeAutomationEvent(user, item))
@@ -290,8 +322,26 @@ function publicAccount(item, username) {
   return { ...rest, username };
 }
 
-function skillDef(name, purpose) {
-  return { name, purpose };
+function skillDef(name, purpose, options = {}) {
+  return {
+    name,
+    purpose,
+    version: options.version || 1,
+    updatedAt: options.updatedAt || nowDisplay(),
+    updatedBy: options.updatedBy || "系统",
+    sourceName: options.sourceName || "backend-default",
+    inputSchema: options.inputSchema || "业务事件上下文、发起人、业务对象和已识别字段",
+    outputSchema: options.outputSchema || "结构化结果、待确认项、写回对象和执行摘要",
+    writesTo: options.writesTo || "业务对象 / 事项中心",
+    prompt: options.prompt || [
+      `# ${name}`,
+      "",
+      `目标：${purpose}`,
+      "输入：业务事件上下文、角色权限和业务对象字段。",
+      "输出：可写回后端业务对象的结构化结果，必须包含置信度、待确认项和处理摘要。",
+      "边界：不得越权读取数据，不直接替代人工审批。"
+    ].join("\n")
+  };
 }
 
 function eventRule(businessAction, robotId, robotName, skills, outputTarget) {
@@ -308,13 +358,28 @@ function automationRuleList() {
     businessAction: rule.businessAction,
     robotId: rule.robotId,
     robotName: rule.robotName,
-    skills: rule.skills.map((id) => ({
-      id,
-      name: skillRegistry[id]?.name || id,
-      purpose: skillRegistry[id]?.purpose || "待定义"
-    })),
+    skills: rule.skills.map((id) => publicSkill(id)),
     outputTarget: rule.outputTarget
   }));
+}
+
+function publicSkill(skillId, includePrompt = false) {
+  const skill = skillRegistry[skillId] || skillDef(skillId, "待定义");
+  return {
+    id: skillId,
+    name: skill.name,
+    purpose: skill.purpose,
+    version: skill.version,
+    updatedAt: skill.updatedAt,
+    updatedBy: skill.updatedBy,
+    sourceName: skill.sourceName,
+    inputSchema: skill.inputSchema,
+    outputSchema: skill.outputSchema,
+    writesTo: skill.writesTo,
+    handlerName: skillHandlers[skillId]?.name || "runGenericSkill",
+    promptPreview: String(skill.prompt || "").slice(0, 160),
+    ...(includePrompt ? { prompt: skill.prompt } : {})
+  };
 }
 
 function triggerBusinessEvent(user, eventType, context = {}) {
@@ -334,13 +399,7 @@ function triggerBusinessEvent(user, eventType, context = {}) {
     inputSummary: context.inputSummary || [],
     outputTarget: context.outputTarget || rule.outputTarget,
     outputs: context.outputs || [],
-    skills: rule.skills.map((id, index) => ({
-      id,
-      name: skillRegistry[id]?.name || id,
-      purpose: skillRegistry[id]?.purpose || "待定义",
-      status: "completed",
-      result: context.skillResults?.[id] || defaultSkillResult(id, index)
-    })),
+    skills: rule.skills.map((id, index) => executeSkill(id, eventType, context, index)),
     status: "completed",
     createdAt: nowDisplay()
   };
@@ -351,6 +410,233 @@ function triggerBusinessEvent(user, eventType, context = {}) {
 function defaultSkillResult(skillId, index) {
   const name = skillRegistry[skillId]?.name || skillId;
   return `${name} 已完成，第 ${index + 1} 步结果已写入后续业务对象。`;
+}
+
+function executeSkill(skillId, eventType, context, index) {
+  const skill = skillRegistry[skillId] || skillDef(skillId, "待定义");
+  const handler = skillHandlers[skillId] || runGenericSkill;
+  const execution = handler({ skillId, skill, eventType, context, index });
+  const result = execution.result || context.skillResults?.[skillId] || defaultSkillResult(skillId, index);
+  return {
+    id: skillId,
+    name: skill.name,
+    purpose: skill.purpose,
+    version: skill.version,
+    sourceName: skill.sourceName,
+    updatedAt: skill.updatedAt,
+    status: "completed",
+    eventType,
+    handlerName: handler.name || "runGenericSkill",
+    inputSchema: skill.inputSchema,
+    outputSchema: skill.outputSchema,
+    writesTo: skill.writesTo,
+    result,
+    structuredOutput: execution.structuredOutput || {},
+    outputSummary: execution.outputSummary || `${skill.name} v${skill.version} 已执行并回写：${context.outputTarget || "业务对象"}`
+  };
+}
+
+function runGenericSkill({ skillId, context, index }) {
+  return {
+    result: context.skillResults?.[skillId] || defaultSkillResult(skillId, index),
+    structuredOutput: {
+      status: "completed",
+      target: context.outputTarget || "业务对象"
+    }
+  };
+}
+
+function runInvoiceOcrSkill({ skillId, context }) {
+  const merchant = readContextValue(context.outputs, "商户") || "待确认";
+  const amount = readContextValue(context.outputs, "金额") || "待确认";
+  const attachmentName = readContextValue(context.outputs, "附件命名") || "待生成";
+  return {
+    result: context.skillResults?.[skillId] || `识别商户 ${merchant}、金额 ${amount}`,
+    structuredOutput: {
+      fields: { merchant, amount, attachmentName },
+      confidence: merchant === "待确认" ? 0.58 : 0.88,
+      nextAction: "回填报销基础表单，等待人工确认"
+    },
+    outputSummary: `发票字段已识别：${merchant} / ${amount}`
+  };
+}
+
+function runExpensePolicyCheckSkill({ skillId, context }) {
+  const amount = readContextValue(context.outputs, "金额") || "待确认";
+  return {
+    result: context.skillResults?.[skillId] || "已生成提交前校验项",
+    structuredOutput: {
+      requiredChecks: ["金额确认", "项目归属确认", "附件完整性确认", "费用类型确认"],
+      amount,
+      approvalHint: amount === "待确认" ? "金额低置信，需要人工补充" : "金额已识别，可进入提交确认"
+    },
+    outputSummary: "报销规则校验项已生成"
+  };
+}
+
+function runProjectCostClassifySkill({ skillId, context }) {
+  const projectNote = readContextValue(context.inputSummary, "项目备注") || readContextValue(context.outputs, "项目") || "待选择项目";
+  return {
+    result: context.skillResults?.[skillId] || `归类到 ${projectNote}`,
+    structuredOutput: {
+      project: projectNote,
+      costCategory: projectNote.includes("招聘") ? "招聘项目费用" : "项目费用",
+      department: "按发起人部门归集"
+    },
+    outputSummary: `费用归类完成：${projectNote}`
+  };
+}
+
+function runContractIntakeSkill({ skillId, context }) {
+  const fileName = readContextValue(context.inputSummary, "文件") || "合同材料";
+  const project = readContextValue(context.inputSummary, "项目") || "客户合作项目";
+  const textLength = readContextValue(context.inputSummary, "文本长度") || "0";
+  return {
+    result: context.skillResults?.[skillId] || `读取合同材料，文本长度 ${textLength}`,
+    structuredOutput: {
+      fileName,
+      project,
+      textLength,
+      materialTypes: ["合同正文", "邮件沟通", "补充附件"]
+    },
+    outputSummary: `合同材料读取完成：${fileName}`
+  };
+}
+
+function runContractRiskSkill({ skillId, context }) {
+  const riskRemark = context.skillResults?.[skillId] || "已生成合同风险备注";
+  return {
+    result: riskRemark,
+    structuredOutput: {
+      riskLevels: ["高风险", "中风险", "低风险"],
+      approvalRemark: riskRemark,
+      writeTo: "审批备注",
+      requiresHumanReview: true
+    },
+    outputSummary: "合同风险已按高/中/低写入审批备注"
+  };
+}
+
+function runContractGroupSkill({ skillId, context }) {
+  const projectId = readContextValue(context.outputs, "合同协作项目") || context.objectId || "待创建";
+  const directApproval = context.objectType === "contract_approval";
+  return {
+    result: context.skillResults?.[skillId] || (directApproval ? "兼容正式审批事件" : "合同项目组已创建"),
+    structuredOutput: {
+      projectId,
+      members: directApproval ? ["发起人", "主管", "法务", "总助"] : ["发起人", "产品", "财务", "法务", "AI"],
+      feedbackObjects: directApproval ? [] : ["产品反馈", "财务反馈", "法务反馈", "业务反馈"]
+    },
+    outputSummary: directApproval ? "正式审批事件已保留项目组兼容记录" : `合同项目组已创建：${projectId}`
+  };
+}
+
+function runApprovalRoutingSkill({ skillId, context }) {
+  const isContract = context.eventType === "contract.uploaded";
+  const chain = isContract
+    ? ["AI 预审", "主管/带教", "法务", "总助", "老板终审"]
+    : ["发起人确认", "直属主管", "归口部门"];
+  return {
+    result: context.skillResults?.[skillId] || `审批链路：${chain.join(" -> ")}`,
+    structuredOutput: {
+      chain,
+      currentGate: chain[0],
+      bossVisibleAt: isContract ? "总助审核通过后" : "按事项权限"
+    },
+    outputSummary: `审批链路已生成：${chain.join(" -> ")}`
+  };
+}
+
+function runLifecycleMonitorSkill({ skillId, context }) {
+  return {
+    result: context.skillResults?.[skillId] || "已生成履约监控事项",
+    structuredOutput: {
+      watchItems: ["合同归档", "交付节点", "账期", "担保材料", "KPI", "赔付边界"],
+      objectId: context.objectId || "",
+      status: "待审批完成后持续监控"
+    },
+    outputSummary: "履约风险监控项已预置"
+  };
+}
+
+function runMeetingScheduleSkill({ skillId, context }) {
+  const title = readContextValue(context.inputSummary, "主题") || "内部会议";
+  const meetingTime = readContextValue(context.inputSummary, "时间") || "待确认";
+  const room = readContextValue(context.inputSummary, "会议室") || "待确认";
+  const participants = readContextValue(context.inputSummary, "参会人") || "相关同事";
+  return {
+    result: context.skillResults?.[skillId] || `生成会议并预订 ${room}`,
+    structuredOutput: {
+      title,
+      meetingTime,
+      room,
+      participants,
+      calendarStatus: "待同步日程"
+    },
+    outputSummary: `会议协调完成：${room} / ${meetingTime}`
+  };
+}
+
+function runMinutesExtractSkill({ skillId, context }) {
+  const source = context.eventType === "daily_report.submitted" ? "日报文本" : "会议目的/纪要";
+  return {
+    result: context.skillResults?.[skillId] || `从${source}提取待办`,
+    structuredOutput: {
+      source,
+      actionItems: context.eventType === "daily_report.submitted"
+        ? ["提取明日计划", "识别延期事项", "沉淀月度总结素材"]
+        : ["提取会议结论", "识别负责人", "生成截止时间待办"]
+    },
+    outputSummary: `${source}待办已提取`
+  };
+}
+
+function runVisitorIntakeSkill({ skillId, context }) {
+  const raw = [...(context.inputSummary || []), context.skillResults?.[skillId] || ""].join(" ");
+  const hasVisitor = raw.includes("访客") || raw.toLowerCase().includes("visitor");
+  return {
+    result: context.skillResults?.[skillId] || (hasVisitor ? "检测到访客场景" : "未检测到访客"),
+    structuredOutput: {
+      hasVisitor,
+      tasks: hasVisitor ? ["访客登记", "会议室指引", "行政接待提醒"] : [],
+      status: hasVisitor ? "已生成接待待办" : "不创建接待流程"
+    },
+    outputSummary: hasVisitor ? "访客接待流程已预置" : "未触发访客流程"
+  };
+}
+
+function runWorkSummarySkill({ skillId, context }) {
+  const summary = context.skillResults?.[skillId] || "日报摘要已生成";
+  return {
+    result: summary,
+    structuredOutput: {
+      summary,
+      dimensions: ["完成事项", "延期事项", "协作事项", "下步计划"]
+    },
+    outputSummary: "日报/周报摘要已生成"
+  };
+}
+
+function runWorkloadScoreSkill({ skillId, context }) {
+  const scoreText = readContextValue(context.outputs, "工作量化分") || "";
+  const score = Number(scoreText.match(/\d+/)?.[0] || 0);
+  const lowScore = score > 0 && score < 70;
+  return {
+    result: context.skillResults?.[skillId] || `量化分 ${score || "待计算"}`,
+    structuredOutput: {
+      score: score || "待计算",
+      threshold: 70,
+      lowScore,
+      reminderTarget: lowScore ? "主管" : "月度总结"
+    },
+    outputSummary: lowScore ? "工作量低于阈值，已提醒主管确认方向" : "工作量化完成，进入汇总"
+  };
+}
+
+function readContextValue(lines, label) {
+  const prefix = `${label}：`;
+  const found = (lines || []).find((line) => String(line).startsWith(prefix));
+  return found ? String(found).slice(prefix.length).trim() : "";
 }
 
 function attachAutomationEvent(target, event) {
@@ -380,6 +666,96 @@ function publicAutomationEvent(event) {
     skills: event.skills,
     status: event.status,
     createdAt: event.createdAt
+  };
+}
+
+async function readSkillUpload(req) {
+  const contentType = req.headers["content-type"] || "";
+  if (contentType.includes("multipart/form-data")) {
+    const form = await readMultipartForm(req, contentType, 1024 * 1024);
+    const file = form.files.find((item) => ["skillFile", "skill", "file"].includes(item.fieldName)) || form.files[0];
+    const content = form.fields.content || form.fields.prompt || file?.contentBuffer.toString("utf8") || "";
+    return {
+      fileName: form.fields.fileName || file?.fileName || "skill-upload.txt",
+      content,
+      name: form.fields.name,
+      purpose: form.fields.purpose,
+      inputSchema: form.fields.inputSchema,
+      outputSchema: form.fields.outputSchema,
+      writesTo: form.fields.writesTo,
+      prompt: form.fields.prompt
+    };
+  }
+  if (contentType.includes("text/plain")) {
+    const buffer = await readRawBody(req, 1024 * 1024);
+    return {
+      fileName: "skill-upload.txt",
+      content: buffer.toString("utf8")
+    };
+  }
+  const body = await readJson(req);
+  return {
+    fileName: body.fileName || body.sourceName || "skill-upload.json",
+    content: body.content || body.prompt || "",
+    name: body.name,
+    purpose: body.purpose,
+    inputSchema: body.inputSchema,
+    outputSchema: body.outputSchema,
+    writesTo: body.writesTo,
+    prompt: body.prompt
+  };
+}
+
+function updateSkillDefinition(skillId, user, upload) {
+  const current = skillRegistry[skillId];
+  if (!current) throw httpError(404, "Skill 不存在");
+  const parsed = parseSkillUpload(upload, current);
+  skillRegistry[skillId] = {
+    ...current,
+    ...parsed,
+    version: Number(current.version || 1) + 1,
+    updatedAt: nowDisplay(),
+    updatedBy: user.name,
+    sourceName: upload.fileName || parsed.sourceName || "skill-upload"
+  };
+  return skillRegistry[skillId];
+}
+
+function parseSkillUpload(upload, current) {
+  const rawContent = String(upload.content || upload.prompt || "").trim();
+  let parsed = {};
+  if (rawContent) {
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch {
+      parsed = parseMarkdownSkill(rawContent);
+    }
+  }
+  const prompt = upload.prompt || parsed.prompt || rawContent || current.prompt;
+  if (!prompt || prompt.trim().length < 12) throw httpError(400, "上传的 Skill 内容太短，无法替换。");
+  return {
+    name: upload.name || parsed.name || current.name,
+    purpose: upload.purpose || parsed.purpose || current.purpose,
+    inputSchema: upload.inputSchema || parsed.inputSchema || current.inputSchema,
+    outputSchema: upload.outputSchema || parsed.outputSchema || current.outputSchema,
+    writesTo: upload.writesTo || parsed.writesTo || current.writesTo,
+    prompt
+  };
+}
+
+function parseMarkdownSkill(content) {
+  const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim();
+  const purpose = content.match(/(?:目的|目标|purpose)[:：]\s*(.+)$/im)?.[1]?.trim();
+  const inputSchema = content.match(/(?:输入|input)[:：]\s*(.+)$/im)?.[1]?.trim();
+  const outputSchema = content.match(/(?:输出|output)[:：]\s*(.+)$/im)?.[1]?.trim();
+  const writesTo = content.match(/(?:写回|writesTo)[:：]\s*(.+)$/im)?.[1]?.trim();
+  return {
+    name: title,
+    purpose,
+    inputSchema,
+    outputSchema,
+    writesTo,
+    prompt: content
   };
 }
 
@@ -1285,14 +1661,14 @@ async function readInvoiceSubmission(req) {
   };
 }
 
-async function readMultipartContract(req, contentType) {
+async function readMultipartForm(req, contentType, maxBytes = 8 * 1024 * 1024) {
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   if (!boundaryMatch) throw httpError(400, "上传格式错误：缺少 multipart boundary");
   const boundary = boundaryMatch[1] || boundaryMatch[2];
-  const raw = await readRawBody(req, 8 * 1024 * 1024);
+  const raw = await readRawBody(req, maxBytes);
   const parts = raw.toString("binary").split(`--${boundary}`);
   const fields = {};
-  let uploadedFile = null;
+  const files = [];
 
   for (const part of parts) {
     const trimmed = part.replace(/^\r\n/, "");
@@ -1307,18 +1683,26 @@ async function readMultipartContract(req, contentType) {
     if (!name) continue;
     const contentBuffer = Buffer.from(bodyBinary, "binary");
     if (fileName) {
-      uploadedFile = { fileName, contentBuffer };
+      files.push({ fieldName: name, fileName, contentBuffer });
     } else {
       fields[name] = contentBuffer.toString("utf8").trim();
     }
   }
 
+  return { fields, files };
+}
+
+async function readMultipartContract(req, contentType) {
+  const form = await readMultipartForm(req, contentType);
+  const fields = form.fields;
+  const uploadedFile = form.files.find((item) => ["contractFile", "invoiceFile", "file"].includes(item.fieldName)) || form.files[0];
   const contractText = fields.contractText || "";
   const fileName = fields.fileName || uploadedFile?.fileName || "contract.txt";
   return {
     title: fields.title || "客户合同审批",
     project: fields.project || "未关联项目",
     amount: fields.amount || "待识别",
+    note: fields.note || "",
     fileName,
     contractText,
     fileBuffer: uploadedFile?.contentBuffer

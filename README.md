@@ -62,6 +62,8 @@ http://localhost:3000
 - `GET /api/tasks`
 - `GET /api/automation/rules`
 - `GET /api/automation/events`
+- `GET /api/skills`
+- `POST /api/skills/:id/upload`
 - `POST /api/expenses/invoices/autofill`
 - `POST /api/contracts/projects`
 - `POST /api/contracts/projects/:id/start-approval`
